@@ -2,6 +2,10 @@
 #include <signal.h>
 #include <stdio.h>
 
+/*
+ * Test
+ */
+
 void sig_handler(int signal); 
 
 int main( int argc, char **argv, char **envp )

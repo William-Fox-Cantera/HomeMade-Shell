@@ -19,6 +19,7 @@ void printPid();
 
 // CONVIENIENCE FUNCTIONS
 void printShell();
+void listHandler(char *commandList[]);
 
 
 // CONSTANTS

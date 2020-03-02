@@ -164,7 +164,7 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandL
     } else if (strcmp(commandList[0], "pwd") == 0) {
         printWorkingDirectory(); // Print Working Directory
     } else if (strcmp(commandList[0], "list") == 0) {
-        printf("Not yet implemented\n");
+        listHandler(commandList);
     } else if (strcmp(commandList[0], "pid") == 0) {
         printPid();
     } else if (strcmp(commandList[0], "kill") == 0) {
@@ -231,13 +231,14 @@ void printWorkingDirectory() {
  */
 void prompt(char *str) {
     if (str != NULL) {
-        prefix = str; // Remember prefix has a global scope
+        prefix = (char *)malloc(strlen(str));
+        strcpy(prefix, str); // Remember prefix has a global scope
     } else {
         printf(" input prompt prefix: ");
         fgets(buffer, BUFFERSIZE, stdin);
         buffer[strlen(buffer)-1] = '\0';
         prefix = (char *)malloc(strlen(buffer));
-        strcpy(prefix, buffer); // Copy bufffer to prefix
+        strcpy(prefix, buffer); // Copy buffer to prefix
     }
 }
 
@@ -268,10 +269,42 @@ char *where(char *command, struct pathelement *pathlist )
   /* similarly loop through finding all locations of command */
 } /* where() */
 
-void list ( char *dir )
-{
+
+/**
+ * list, acts as the ls command, with no arguments, lists all the files in the
+ *       current working directory, with arguments lists the files contained in
+ *       the arguments given (directories).
+ * 
+ * Consumes: A string (directory name)
+ * Produces: Nothing
+ */
+void list (char *dir) {
   /* see man page for opendir() and readdir() and print out filenames for
   the directory passed */
+  DIR *dp;
+  struct dirent *dirp;
+  if (strcmp(dir, "") == 0) { // Case where no arguments are given
+      char *cwd = getcwd(NULL, 0); // Only prints cwd
+      if ((dp = opendir(cwd)) == NULL) {
+          errno = ENOENT;
+          perror("No cwd: ");
+      }
+      while ((dirp = readdir(dp)) != NULL)
+          printf(" %s\n", dirp->d_name);
+      free(cwd);
+  } else { // Case where list is called with arguments
+      if ((dp = opendir(dir)) == NULL) {
+          errno = ENOENT;
+          printf(" list: cannot access %s: %s\n", dir, strerror(errno));
+          return; // If directory doesn't exist exit this function.
+      }
+      printf(" %s:\n", dir);
+      while ((dirp = readdir(dp)) != NULL) {
+          printf("    %s\n", dirp->d_name);
+      }
+  }
+
+
 } /* list() */
 
 
@@ -291,4 +324,21 @@ void printShell() {
   else
     printf(" [%s]>", ptr);
   free(ptr); 
+}
+
+
+/**
+ * listHandler, handles the logic for the list function. Checks if called
+ *              with no arguments, or with arguments and calls list accordingly.
+ * 
+ * Consumes: An array of strings
+ * Produces: Nothing
+ */
+void listHandler(char *commandList[]) {
+    if (commandList[1] == NULL) {
+            list("");
+    } else {
+        for (int i = 1; commandList[i] != NULL; i++)  // i = 1 because commandList at index 1 and is the list command
+            list(commandList[i]); 
+    }
 }

@@ -14,6 +14,7 @@ void printenv(char **envp);
 void printWorkingDirectory();
 void prompt(char *str);
 void exitProgram();
+void printPid();
 
 
 // CONVIENIENCE FUNCTIONS

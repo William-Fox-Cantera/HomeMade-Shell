@@ -81,9 +81,13 @@ int sh( int argc, char **argv, char **envp ) {
 
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
         /* check for each built in command and implement */
+            printf(" Executing built-in: %s\n", commandList[0]);
             runBuiltIn(commandList, pathList);
         } else { /* else find program to exec */
             /* find it */
+            
+            // TODO make the which function
+            printf("Executing: PATHNAME HERE"); 
             /* do fork(), execve() and waitpid() */
             char *argv[] = { "ls", "-l", NULL };
             char *envp[] = {
@@ -162,7 +166,7 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandL
     } else if (strcmp(commandList[0], "list") == 0) {
         printf("Not yet implemented\n");
     } else if (strcmp(commandList[0], "pid") == 0) {
-        printf("Not yet implemented\n");
+        printPid();
     } else if (strcmp(commandList[0], "kill") == 0) {
         printf("Not yet implemented\n");
     } else if (strcmp(commandList[0], "prompt") == 0) {
@@ -177,6 +181,17 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandL
 
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
+
+/**
+ * printPid, prints the pid of the shell.
+ * 
+ * Consumes: Nothing
+ * Produces: Nothing
+ */
+void printPid() {
+    int pid = getpid();
+    printf(" pid: %d\n", pid);
+}
 
 
 /**
@@ -218,7 +233,7 @@ void prompt(char *str) {
     if (str != NULL) {
         prefix = str; // Remember prefix has a global scope
     } else {
-        printf("input prompt prefix ");
+        printf(" input prompt prefix: ");
         fgets(buffer, BUFFERSIZE, stdin);
         buffer[strlen(buffer)-1] = '\0';
         prefix = (char *)malloc(strlen(buffer));

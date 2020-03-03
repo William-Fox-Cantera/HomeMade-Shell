@@ -13,21 +13,22 @@
 #include <stdio.h>
 #include "sh.h"
 
-//****************************************************************************************************************************
-// CONSTANTS
-# define BUFFERSIZE 512
-# define BUILT_IN_COMMAND_COUNT 11
-const char *BUILT_IN_COMMANDS[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv"};
+/* TODO: 
+    - Make it so the command line is parsed such that double quotes are seen as one argument
+    - Update the path linked list if the PATH environment variable is updated with setenv
+    - Handle the signals and stuff like SIGINT ctrl+c ctrl+d ctrl+z
+*/
 
 //****************************************************************************************************************************
 // GLOBALS
-char *prefix;
+const char *BUILT_IN_COMMANDS[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv"};
+char *prefix; // String that precedes prompt when using the prompt function
 char *previousWorkingDirectory; // System for going back to previous directory with "cd -"
-char buffer[BUFFERSIZE]; // Read commands from stdin
 
 
 //****************************************************************************************************************************
 int sh( int argc, char **argv, char **envp ) {
+    /*
     char *prompt = calloc(PROMPTMAX, sizeof(char));
     char *commandline = calloc(MAX_CANON, sizeof(char));
     char *command, *arg, *commandpath, *p, *pwd, *owd;
@@ -45,27 +46,27 @@ int sh( int argc, char **argv, char **envp ) {
       perror("getcwd");
       exit(2);
     }
+    
     owd = calloc(strlen(pwd) + 1, sizeof(char));
     memcpy(owd, pwd, strlen(pwd));
     prompt[0] = ' '; prompt[1] = '\0';
-
+    */
 
     // MY VARIABLES
+    int status;
+    int go = 1; // Runs main loop
+    char buffer[BUFFERSIZE]; // Read commands from stdin
     pid_t pid;
     char *commandList[BUFFERSIZE]; // Store the commands and flags typed by the user
     char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
-    int ignoreFirst = 0;
-    struct pathelement *pathList;
-
     /* Put PATH into a linked list */
-    pathList = get_path();
-
+    struct pathelement *pathList = get_path(); 
 
 
     /*
     Main Loop For Shell
     */
-    while ( go ) {
+    while (go) {
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, getcwd(NULL, 0)) != 0)
             previousWorkingDirectory = currentWorkingDirectory;
@@ -80,11 +81,11 @@ int sh( int argc, char **argv, char **envp ) {
             continue;
         if (buffer[strlen(buffer)-1] == '\n')
             buffer[strlen(buffer)-1] = 0; // Handle \n from fgets
-            
-        char *token = strtok (buffer, " ");
-        for (int i = 0; token != NULL; i++) { // Parsing args
+        // Main Argumment Parser
+        char *token = strtok (buffer, " "); 
+        for (int i = 0; token != NULL; i++) { 
             commandList[i] = token;
-            token = strtok (NULL, " ");
+            token = strtok (NULL, " "); // Get ris of "-" used in flags for arguments
         }
 
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
@@ -155,7 +156,9 @@ int isBuiltIn(char *command) {
 
 
 /**
- * runBuiltIn, runs the built in commands
+ * runBuiltIn, runs the built in commands, if a command like list is called with multiple
+ *             arguments, its handler function is called, calling the command for each
+ *             argument given.
  * 
  * Consumes: A string
  * Produces: Nothing
@@ -176,7 +179,7 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) 
     } else if (strcmp(commandList[0], "pid") == 0) {
         printPid();
     } else if (strcmp(commandList[0], "kill") == 0) {
-        printf("Not yet implemented\n");
+        killIt(commandList);
     } else if (strcmp(commandList[0], "prompt") == 0) {
         prompt(commandList); // Prompt takes one arg
     } else if (strcmp(commandList[0], "printenv") == 0) {
@@ -189,6 +192,45 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) 
 
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
+
+/**
+ * killIt, when given just a pid, sends SIGTERM to it to politely kill that process.
+ *         if given a signal number (ie. kill -9 1234), sends that signal to the 
+ *         process.
+ * 
+ * Consumes: A list of strings
+ * Produces: Nothing
+ */
+void killIt(char **commandList) {
+    int pid;
+    if (commandList[1] == NULL) { // Case where no argument is given
+        fprintf(stderr, "%s", " kill: Specify at least one argument\n");
+    } else if (commandList[2] != NULL) { // Case where a flag such as "-9" is used 
+        int signal;
+        if ((signal = atoi(commandList[1])) == 0) { // If the signal number is invalid
+            errno = EINVAL;
+            perror(" kill, bad signal");
+        } else if ((pid = atoi(commandList[2])) == 0) { // If the pid is invalid
+            errno = EINVAL;
+            perror(" kill, no pid");
+        } else {
+            if ((kill(pid, signal)) != 0) {
+                errno = ESRCH;
+                perror(" kill");
+            }
+        }
+    } else { // Case where just a pid is given
+        if ((pid = atoi(commandList[1])) == 0) { // If an invalid argument was entered, such as a string
+            errno = EINVAL;
+            perror(" kill");
+        } else {
+            if (kill(pid, SIGTERM) != 0) { // If the pid does not exist
+                errno = ESRCH;
+                perror(" kill");
+            }
+        }
+    }
+}
 
 
 /**
@@ -326,11 +368,12 @@ void prompt(char **commandList) {
             strcat(prefix, " ");
         }
     } else {
+        char tempBuffer[BUFFERSIZE];
         printf(" input prompt prefix: ");
-        fgets(buffer, BUFFERSIZE, stdin);
-        buffer[strlen(buffer)-1] = '\0';
-        prefix = (char *)malloc(strlen(buffer));
-        strcpy(prefix, buffer); // Copy buffer to prefix
+        fgets(tempBuffer, BUFFERSIZE, stdin);
+        tempBuffer[strlen(tempBuffer)-1] = '\0';
+        prefix = (char *)malloc(strlen(tempBuffer));
+        strcpy(prefix, tempBuffer); // Copy buffer to prefix
     }
 }
 

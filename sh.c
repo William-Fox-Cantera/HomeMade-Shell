@@ -178,11 +178,11 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) 
     } else if (strcmp(commandList[0], "kill") == 0) {
         printf("Not yet implemented\n");
     } else if (strcmp(commandList[0], "prompt") == 0) {
-        prompt(commandList[1]); // Prompt takes one arg
+        prompt(commandList); // Prompt takes one arg
     } else if (strcmp(commandList[0], "printenv") == 0) {
         printEnvironment(commandList, envp);
     } else if (strcmp(commandList[0], "setenv") == 0) {
-        printf("Not yet implemented\n");
+        setEnvironment(commandList, envp);
     }
 }
 
@@ -190,8 +190,36 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) 
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
 
+
 /**
- * printenv, when given no arguments, prints all of the enviornment variables.
+ * setEnvironment, when called with no arguments, prints out all the environment
+ *                 variables like printEnvironment does. When called with one
+ *                 argument, sets it as an empty environment variable. When called
+ *                 with two arguments, sets the first equal to the second. More than
+ *                 two arguments should result in an error message. This will also 
+ *                 handle two special cases: One if the HOME variable is changed,
+ *                 Two if the PATH variable is changed.
+ * 
+ * Consumes: Two lists of strings
+ * Produces: Nothing
+ */
+void setEnvironment(char **commandList, char **envp) {
+    if (commandList[3] != NULL) { // Case where more than two arguments are used
+        fprintf(stderr, "%s", " setenv: Too many arguments\n");
+    } else if (commandList[1] == NULL) { // Case where command is called with no arguments
+        for (int i = 0; envp[i] != NULL; i++) {
+            printf(" \n%s", envp[i]);
+        }
+    } else if (commandList[2] != NULL) { // Case where called with two arguments
+        setenv(commandList[1], commandList[2], 1); // Should overwrite existing environment variables
+    } else { // Case where called with one argument
+        setenv(commandList[1], "", 1); // Empty environment variable
+    }
+}
+
+
+/**
+ * printEnvironment, when given no arguments, prints all of the enviornment variables.
  *           When given one argument, calls getenv(3). Two or more arguments
  *           are not accepted and will invoke an error message.
  * 
@@ -289,10 +317,14 @@ void printWorkingDirectory() {
  * Consumes: A string
  * Produces: Nothing
  */
-void prompt(char *str) {
-    if (str != NULL) {
-        prefix = (char *)malloc(strlen(str));
-        strcpy(prefix, str); // Remember prefix has a global scope
+void prompt(char **commandList) {
+    if (commandList[1] != NULL) {
+        prefix = '\0'; // strcat must use null terminated strings
+        prefix = (char *)malloc(sizeof(commandList));
+        for (int i = 1; commandList[i] != NULL; i++) {
+            strcat(prefix, commandList[i]); // Remember prefix has a global scope
+            strcat(prefix, " ");
+        }
     } else {
         printf(" input prompt prefix: ");
         fgets(buffer, BUFFERSIZE, stdin);
@@ -331,6 +363,7 @@ char *which(char *command, struct pathelement *pathlist) {
                     printf(" %s\n", temp);
                     char *path = (char * )malloc(strlen(temp));
                     strcpy(path, temp); // dest, src
+                    closedir(dp);
                     return path; // Exits function
                 }
             }
@@ -346,17 +379,19 @@ char *which(char *command, struct pathelement *pathlist) {
 /**
  * where, returns all instances of the command in path. This is the same code as 
  *        the which function, except it is checking for existence of the files
- *        rather than execution permission.
+ *        rather than execution permission. Also the loop doesn't stop when one
+ *        file is found, rather all files containing the command string will be
+ *        returned
  * 
  * Consumes: A string, A list of strings
  * Produces: A string
  */
-char *where(char *command, struct pathelement *pathlist )
-{
+char *where(char *command, struct pathelement *pathlist ) {
   /* similarly loop through finding all locations of command */
   char temp[BUFFERSIZE];
     DIR *dp;
     struct dirent *dirp;
+    char *path = NULL;
     while (pathlist) { // Traverse path until NULL 
         if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
             errno = ENOTDIR;
@@ -364,23 +399,26 @@ char *where(char *command, struct pathelement *pathlist )
             exit(errno);
         } 
         while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
-            if (strcmp(dirp->d_name, command) == 0) { // If command is found do some string copying then return
+            if (strstr(dirp->d_name, command) == 0) { // If command is found do some string copying then return
                 if (access(pathlist->element, F_OK) == 0) { // Make sure to only return the executable command
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
-                    printf(" %s\n", temp);
-                    char *path = (char * )malloc(strlen(temp));
+                    strcat(temp, "\n");
                     strcpy(path, temp); // dest, src
-                    return path; // Exits function
                 }
             }
         }
         closedir(dp);
         pathlist = pathlist->next;
     }
-    printf(" %s: Command not found.\n", command);
-    return NULL; // If the command was not found
+    if (path == NULL) {
+        printf(" %s: Command not found.\n", command);
+        return NULL; // Null if not found
+    } else {
+        char *path = (char * )malloc(strlen(temp));
+        return path;
+    }
 } /* where() */
 
 

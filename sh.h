@@ -12,11 +12,12 @@ char *where(char *command, struct pathelement *pathList);
 void list ( char *dir );
 void printenv(char **envp);
 void printWorkingDirectory();
-void prompt(char *str);
+void prompt(char *commandList[]);
 void exitProgram();
 void printPid();
 void changeDirectory(char *commandList[]);
 void printEnvironment(char **commandList, char **envp); 
+void setEnvironment(char **commandList, char **envp);
 
 
 // CONVIENIENCE FUNCTIONS

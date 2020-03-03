@@ -22,6 +22,8 @@ void printEnvironment(char **commandList, char **envp);
 // CONVIENIENCE FUNCTIONS
 void printShell();
 void listHandler(char *commandList[]);
+void whichHandler(char *commandList[], struct pathelement *pathList);
+void whereHandler(char *commandList[], struct pathelement *pathList);
 
 
 // CONSTANTS

@@ -49,8 +49,6 @@ int sh( int argc, char **argv, char **envp ) {
     memcpy(owd, pwd, strlen(pwd));
     prompt[0] = ' '; prompt[1] = '\0';
 
-    /* Put PATH into a linked list */
-    pathList = get_path();
 
     // MY VARIABLES
     pid_t pid;
@@ -58,6 +56,9 @@ int sh( int argc, char **argv, char **envp ) {
     char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
     int ignoreFirst = 0;
     struct pathelement *pathList;
+
+    /* Put PATH into a linked list */
+    pathList = get_path();
 
 
 
@@ -163,9 +164,9 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) 
     if (strcmp(commandList[0], "exit") == 0) { // strcmp returns 0 if true
         exitProgram(); // Exit the program and thus the shell
     } else if (strcmp(commandList[0], "which") == 0) {
-        printf("Not yet implemented\n");
+        whichHandler(commandList, pathList);
     } else if (strcmp(commandList[0], "where") == 0) {
-        printf("Not yet implemented\n");
+        whereHandler(commandList, pathList);
     } else if (strcmp(commandList[0], "cd") == 0) {
         changeDirectory(commandList);
     } else if (strcmp(commandList[0], "pwd") == 0) {
@@ -303,29 +304,83 @@ void prompt(char *str) {
 
 
 /**
- * which, locates commands. Returns the location of the command.
+ * which, locates commands. Returns the location of the command given as the argument.
+ *                          If this function is called, don't forget to free the returned
+ *                          string at some point.
  * 
  * Consumes: A string, A list of strings
  * Produces: A string
  */
-char *which(char *command, struct pathelement *pathlist ) {
-    /* loop through pathlist until finding command and return it.  Return
-    NULL when not found. */
-    while (pathlist) {         // WHICH
-      sprintf(command, "%s/gcc", pathlist->element);
-      if (access(command, X_OK) == 0) {
-        printf("[%s]\n", command);
-        break;
-      }
-    pathlist = pathlist->next;
+char *which(char *command, struct pathelement *pathlist) {
+    /* loop through pathlist until finding command and return it. Return NULL when not found. */
+    char temp[BUFFERSIZE];
+    DIR *dp;
+    struct dirent *dirp;
+    while (pathlist) { // Traverse path until NULL 
+        if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
+            errno = ENOTDIR;
+            perror(" Error opening");
+            exit(errno);
+        } 
+        while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
+            if (strcmp(dirp->d_name, command) == 0) { // If command is found do some string copying then return
+                if (access(pathlist->element, X_OK) == 0) { // Make sure to only return the executable command
+                    strcpy(temp, pathlist->element);
+                    strcat(temp, "/"); // Special character in UNIX
+                    strcat(temp, dirp->d_name); // Concatenate full path name
+                    printf(" %s\n", temp);
+                    char *path = (char * )malloc(strlen(temp));
+                    strcpy(path, temp); // dest, src
+                    return path; // Exits function
+                }
+            }
+        }
+        closedir(dp);
+        pathlist = pathlist->next;
     }
-    return pathlist->element;
+    printf(" %s: Command not found.\n", command);
+    return NULL; // If the command was not found
 } /* which() */
 
 
+/**
+ * where, returns all instances of the command in path. This is the same code as 
+ *        the which function, except it is checking for existence of the files
+ *        rather than execution permission.
+ * 
+ * Consumes: A string, A list of strings
+ * Produces: A string
+ */
 char *where(char *command, struct pathelement *pathlist )
 {
   /* similarly loop through finding all locations of command */
+  char temp[BUFFERSIZE];
+    DIR *dp;
+    struct dirent *dirp;
+    while (pathlist) { // Traverse path until NULL 
+        if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
+            errno = ENOTDIR;
+            perror(" Error opening");
+            exit(errno);
+        } 
+        while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
+            if (strcmp(dirp->d_name, command) == 0) { // If command is found do some string copying then return
+                if (access(pathlist->element, F_OK) == 0) { // Make sure to only return the executable command
+                    strcpy(temp, pathlist->element);
+                    strcat(temp, "/"); // Special character in UNIX
+                    strcat(temp, dirp->d_name); // Concatenate full path name
+                    printf(" %s\n", temp);
+                    char *path = (char * )malloc(strlen(temp));
+                    strcpy(path, temp); // dest, src
+                    return path; // Exits function
+                }
+            }
+        }
+        closedir(dp);
+        pathlist = pathlist->next;
+    }
+    printf(" %s: Command not found.\n", command);
+    return NULL; // If the command was not found
 } /* where() */
 
 
@@ -361,6 +416,7 @@ void list (char *dir) {
       while ((dirp = readdir(dp)) != NULL) {
           printf("    %s\n", dirp->d_name);
       }
+      closedir(dp); // Close the directory opened
   }
 
 
@@ -400,4 +456,30 @@ void listHandler(char *commandList[]) {
         for (int i = 1; commandList[i] != NULL; i++)  // i = 1 because commandList at index 1 and is the list command
             list(commandList[i]); 
     }
+}
+
+
+/**
+ * whichHandler, Handles multiples args being sent to which
+ * 
+ * Consumes: Two lists of strings
+ * Produces: Nothing
+ */
+void whichHandler(char *commandList[], struct pathelement *pathList) {
+    for (int i = 1; commandList[i] != NULL; i++) {
+            which(commandList[i], pathList);
+        }
+}
+
+
+/**
+ * whereHandler, Handles multiples args being sent to where
+ * 
+ * Consumes: Two lists of strings
+ * Produces: Nothing
+ */
+void whereHandler(char *commandList[], struct pathelement *pathList) {
+    for (int i = 1; commandList[i] != NULL; i++) {
+            which(commandList[i], pathList);
+        }
 }

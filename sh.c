@@ -4,6 +4,7 @@
     - Make it so the command line is parsed such that double quotes are seen as one argument
     - Update the path linked list if the PATH environment variable is updated with setenv
     - Handle the signals and stuff like SIGINT ctrl+c ctrl+d ctrl+z
+    
 */
 
 //****************************************************************************************************************************

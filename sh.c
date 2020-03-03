@@ -1,16 +1,3 @@
-#include <stdio.h>
-#include <string.h>
-#include <strings.h>
-#include <limits.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <pwd.h>
-#include <dirent.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <errno.h>
-#include <stdio.h>
 #include "sh.h"
 
 /* TODO: 
@@ -304,7 +291,7 @@ void changeDirectory(char *commandList[]) {
             printf(" Error moving to previous directory\n");
         }
     } else {
-        if (chdir(commandList[1]) != 0) {
+        if (chdir(commandList[1]) != 0) { // Handles normal in chdir call
             errno = ENOENT;
             perror(" Error ");
         }

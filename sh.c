@@ -1,10 +1,8 @@
 #include "sh.h"
 
 /* TODO: 
-    - Make it so the command line is parsed such that double quotes are seen as one argument
     - Update the path linked list if the PATH environment variable is updated with setenv
     - Handle the signals and stuff like SIGINT ctrl+c ctrl+d ctrl+z
-    
 */
 
 //****************************************************************************************************************************
@@ -16,30 +14,6 @@ char *previousWorkingDirectory; // System for going back to previous directory w
 
 //****************************************************************************************************************************
 int sh( int argc, char **argv, char **envp ) {
-    /*
-    char *prompt = calloc(PROMPTMAX, sizeof(char));
-    char *commandline = calloc(MAX_CANON, sizeof(char));
-    char *command, *arg, *commandpath, *p, *pwd, *owd;
-    char **args = calloc(MAXARGS, sizeof(char*));
-    int uid, i, status, argsct, go = 1;
-    struct passwd *password_entry;
-    char *homedir;
-
-    uid = getuid();
-    password_entry = getpwuid(uid);      
-    homedir = password_entry->pw_dir;	
-      
-    if ( (pwd = getcwd(NULL, PATH_MAX+1)) == NULL )
-    {
-      perror("getcwd");
-      exit(2);
-    }
-    
-    owd = calloc(strlen(pwd) + 1, sizeof(char));
-    memcpy(owd, pwd, strlen(pwd));
-    prompt[0] = ' '; prompt[1] = '\0';
-    */
-
     // MY VARIABLES
     int status;
     int go = 1; // Runs main loop
@@ -67,53 +41,31 @@ int sh( int argc, char **argv, char **envp ) {
         fgets(buffer, BUFFERSIZE, stdin);
         if (strlen(buffer) < 2) // Ignore empty stdin, ie. user presses enter with no input
             continue;
-        if (buffer[strlen(buffer)-1] == '\n')
-            buffer[strlen(buffer)-1] = 0; // Handle \n from fgets
+        if (buffer[strlen(buffer)-1] == '\n') // Handle \n from fgets
+            buffer[strlen(buffer)-1] = '\0'; 
         // Main Argumment Parser
         char *token = strtok (buffer, " "); 
         for (int i = 0; token != NULL; i++) { 
             commandList[i] = token;
             token = strtok (NULL, " "); // Get ris of "-" used in flags for arguments
         }
-
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
         /* check for each built in command and implement */
             printf(" Executing built-in: %s\n", commandList[0]);
             runBuiltIn(commandList, pathList, envp);
-        } else { /* else find program to exec */
-            /* find it */
-            
-            // TODO make the which function
-            printf("Executing: PATHNAME HERE"); 
-            /* do fork(), execve() and waitpid() */
-            char *argv[] = { "ls", "-l", NULL };
-            char *envp[] = {
-                "HOME=/",
-                "PATH=/bin:/usr/bin",
-                "TZ=UTC0",
-                "USER=william",
-                "LOGNAME=william",
-                NULL
-            };
-            if ((pid = fork()) < 0) { // Child
-                perror("fork error");
-            } else if (pid == 0) {
-                execve("/bin/ls", argv, envp);
-                printf("couldn't execute: %s", strerror(errno));
-                exit(127);
+        } else if (strstr(commandList[0], "./") || strstr(commandList[0], "../") || strstr(commandList[0], "/")) {
+            // If the command contains an absolute path ie. /, ./ ../,  check for executability
+            // If it is executable, then just run it.
+            if (access(commandList[0], X_OK) == 0) { // If it's executable
+                printf(" Executing: %s\n", commandList[0]);
+                system(commandList[0]); // The system function runs an executable
             }
-            // Parent
-            if ((pid = waitpid(pid, &status, 0)) < 0) {
-                perror("waitpid error");
-            } 
-            /*
-            else {
-                fprintf(stderr, "%s: Command not found.\n", args[0]);
-            }
-            */
+        } else { // It is an external command
+            // When this function is done all of its local variables pop off the stack so no need to memset
+            handleExternalCommand(commandList, envp, pathList, status); 
             printShell();
-            }
-            memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
+        }
+        memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
         }
         return 0;
     } /* sh() */
@@ -123,6 +75,37 @@ int sh( int argc, char **argv, char **envp ) {
 
 // HELPER FUNCTIONS
 //***************************************************************************************************************
+
+/**
+ * handleExternalCommand, spawns a child process using fork, then runs the command
+ *                        with execve. The parent process does a waitpid.
+ * 
+ * Consumes: Three lists of strings, An integer
+ * Produces: Nothing
+ */
+void handleExternalCommand(char **commandList, char **envp, struct pathelement *pathList, int status) {
+     /* find it */
+    char *externalPath = which(commandList[0], pathList);
+    if (externalPath != NULL)
+        printf(" Executing %s\n", externalPath);
+
+    if (externalPath != NULL) {
+        /* do fork(), execve() and waitpid() */
+        char *envp[] = { NULL }; // Give execve something to chew on
+
+        if ((pid = fork()) < 0) { // Child
+            perror(" fork error");
+        } else if (pid == 0) {
+            execve(externalPath, commandList, envp);
+            printf(" couldn't execute: %s", strerror(errno));
+            exit(127);
+        }
+        if ((pid = waitpid(pid, &status, 0)) < 0) { // Parent
+            perror(" waitpid error");
+        } 
+    } 
+}
+
 
 /**
  * isBuiltIn, determines whether the command given is apart of the built in 
@@ -195,6 +178,7 @@ void killIt(char **commandList) {
         fprintf(stderr, "%s", " kill: Specify at least one argument\n");
     } else if (commandList[2] != NULL) { // Case where a flag such as "-9" is used 
         int signal;
+        commandList[1][0] = ' '; // Ignore the prepended "-" character
         if ((signal = atoi(commandList[1])) == 0) { // If the signal number is invalid
             errno = EINVAL;
             perror(" kill, bad signal");
@@ -391,7 +375,6 @@ char *which(char *command, struct pathelement *pathlist) {
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
-                    printf(" %s\n", temp);
                     char *path = (char * )malloc(strlen(temp));
                     strcpy(path, temp); // dest, src
                     closedir(dp);
@@ -409,10 +392,9 @@ char *which(char *command, struct pathelement *pathlist) {
 
 /**
  * where, returns all instances of the command in path. This is the same code as 
- *        the which function, except it is checking for existence of the files
- *        rather than execution permission. Also the loop doesn't stop when one
+ *        the which function except the loop doesn't stop when one
  *        file is found, rather all files containing the command string will be
- *        returned
+ *        returned assuming they're executables.
  * 
  * Consumes: A string, A list of strings
  * Produces: A string
@@ -431,7 +413,7 @@ char *where(char *command, struct pathelement *pathlist ) {
         } 
         while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
             if (strstr(dirp->d_name, command) == 0) { // If command is found do some string copying then return
-                if (access(pathlist->element, F_OK) == 0) { // Make sure to only return the executable command
+                if (access(pathlist->element, X_OK) == 0) { // Make sure to only return the executable command
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
@@ -535,8 +517,11 @@ void listHandler(char *commandList[]) {
  * Produces: Nothing
  */
 void whichHandler(char *commandList[], struct pathelement *pathList) {
+    char *pathToCmd;
     for (int i = 1; commandList[i] != NULL; i++) {
-            which(commandList[i], pathList);
+            pathToCmd = which(commandList[i], pathList);
+            if (pathToCmd != NULL)
+                printf(" %s\n", pathToCmd);
         }
 }
 

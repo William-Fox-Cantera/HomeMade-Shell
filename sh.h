@@ -21,6 +21,7 @@ int pid;
 int sh( int argc, char **argv, char **envp);
 
 // HELPER FUNCTIONS
+void handleExternalCommand(char **commandList, char **envp, struct pathelement *pathList, int status);
 int isBuiltIn(char *command); 
 void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 

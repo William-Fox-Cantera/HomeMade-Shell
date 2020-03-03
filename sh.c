@@ -22,6 +22,7 @@ const char *BUILT_IN_COMMANDS[] = {"exit", "which", "where", "cd", "pwd", "list"
 //****************************************************************************************************************************
 // GLOBALS
 char *prefix;
+char *previousWorkingDirectory; // System for going back to previous directory with "cd -"
 char buffer[BUFFERSIZE]; // Read commands from stdin
 
 
@@ -34,7 +35,6 @@ int sh( int argc, char **argv, char **envp ) {
     int uid, i, status, argsct, go = 1;
     struct passwd *password_entry;
     char *homedir;
-    struct pathelement *pathList;
 
     uid = getuid();
     password_entry = getpwuid(uid);      
@@ -52,17 +52,24 @@ int sh( int argc, char **argv, char **envp ) {
     /* Put PATH into a linked list */
     pathList = get_path();
 
-
-
     // MY VARIABLES
     pid_t pid;
-    char *commandList[BUFFERSIZE]; // Store the commands and flags typed
+    char *commandList[BUFFERSIZE]; // Store the commands and flags typed by the user
+    char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
+    int ignoreFirst = 0;
+    struct pathelement *pathList;
+
 
 
     /*
     Main Loop For Shell
     */
     while ( go ) {
+        /* Keep track of the previous and current working directories */
+        if (strcmp(currentWorkingDirectory, getcwd(NULL, 0)) != 0)
+            previousWorkingDirectory = currentWorkingDirectory;
+        currentWorkingDirectory = getcwd(NULL, 0);
+
         /* print your prompt */
         printShell();
 
@@ -82,7 +89,7 @@ int sh( int argc, char **argv, char **envp ) {
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
         /* check for each built in command and implement */
             printf(" Executing built-in: %s\n", commandList[0]);
-            runBuiltIn(commandList, pathList);
+            runBuiltIn(commandList, pathList, envp);
         } else { /* else find program to exec */
             /* find it */
             
@@ -152,7 +159,7 @@ int isBuiltIn(char *command) {
  * Consumes: A string
  * Produces: Nothing
  */
-void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandList[0] will always be the command itself
+void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
     if (strcmp(commandList[0], "exit") == 0) { // strcmp returns 0 if true
         exitProgram(); // Exit the program and thus the shell
     } else if (strcmp(commandList[0], "which") == 0) {
@@ -160,7 +167,7 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandL
     } else if (strcmp(commandList[0], "where") == 0) {
         printf("Not yet implemented\n");
     } else if (strcmp(commandList[0], "cd") == 0) {
-        printf("Not yet implemented\n");
+        changeDirectory(commandList);
     } else if (strcmp(commandList[0], "pwd") == 0) {
         printWorkingDirectory(); // Print Working Directory
     } else if (strcmp(commandList[0], "list") == 0) {
@@ -172,7 +179,7 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandL
     } else if (strcmp(commandList[0], "prompt") == 0) {
         prompt(commandList[1]); // Prompt takes one arg
     } else if (strcmp(commandList[0], "printenv") == 0) {
-        printf("Not yet implemented\n");
+        printEnvironment(commandList, envp);
     } else if (strcmp(commandList[0], "setenv") == 0) {
         printf("Not yet implemented\n");
     }
@@ -181,6 +188,58 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList) { // commandL
 
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
+
+/**
+ * printenv, when given no arguments, prints all of the enviornment variables.
+ *           When given one argument, calls getenv(3). Two or more arguments
+ *           are not accepted and will invoke an error message.
+ * 
+ * Consumes: A string, An array of strings
+ * Produces: Nothing
+ */
+void printEnvironment(char **commandList, char **envp) {
+    if (commandList[2] != NULL) { // If two or more args were used
+        fprintf(stderr, "%s", " printenv: Too many arguments\n"); 
+    } else if (commandList[1] == NULL) { // Case where called with no argument
+        for (int i = 0; envp[i] != NULL; i++) {
+            printf("\n%s", envp[i]);
+        }
+    } else { // Else find environment variable given as argument and print
+        if (getenv(commandList[1]) != NULL) 
+            printf(" %s\n", getenv(commandList[1]));
+        else 
+            fprintf(stderr, "%s", " Error: environment variable not found\n");
+    }
+}
+
+
+/**
+ * changeDirectory, with no arguments, changes the cwd to the home directory. 
+ *                  with "-" as an argument, changes directory to the one 
+ *                  previously in. Otherwise change to the directory given as
+ *                  the argument.
+ * 
+ * Consumes: A list of strings
+ * Produces: Nothing
+ */
+void changeDirectory(char *commandList[]) {
+    if (commandList[1] == NULL) { // Case where no argument is given
+        if (chdir(getenv("HOME")) != 0) { // Go to home
+            errno = ENOENT;
+            perror(" Error ");
+        }
+    } else if (strcmp(commandList[1], "-") == 0) { // Case where "-" is given
+        if(chdir(previousWorkingDirectory) != 0) {
+            printf(" Error moving to previous directory\n");
+        }
+    } else {
+        if (chdir(commandList[1]) != 0) {
+            errno = ENOENT;
+            perror(" Error ");
+        }
+    }
+}
+
 
 /**
  * printPid, prints the pid of the shell.

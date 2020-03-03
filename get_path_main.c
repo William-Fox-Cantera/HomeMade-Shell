@@ -1,6 +1,6 @@
 #include "get_path.h"
 
-main()
+int main()
 {
   char cmd[64];
   struct pathelement *p;
@@ -24,4 +24,5 @@ main()
     }
     p = p->next;
   }
+  return 0;
 }

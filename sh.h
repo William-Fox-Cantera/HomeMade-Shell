@@ -4,7 +4,7 @@
 int pid;
 int sh( int argc, char **argv, char **envp);
 int isBuiltIn(char *command); 
-void runBuiltIn(char *commandList[], struct pathelement *pathList);
+void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);
@@ -15,6 +15,8 @@ void printWorkingDirectory();
 void prompt(char *str);
 void exitProgram();
 void printPid();
+void changeDirectory(char *commandList[]);
+void printEnvironment(char **commandList, char **envp); 
 
 
 // CONVIENIENCE FUNCTIONS

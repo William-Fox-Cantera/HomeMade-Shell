@@ -7,7 +7,6 @@
 
 //****************************************************************************************************************************
 // GLOBALS
-const char *BUILT_IN_COMMANDS[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv"};
 char *prefix; // String that precedes prompt when using the prompt function
 char *previousWorkingDirectory; // System for going back to previous directory with "cd -"
 
@@ -53,17 +52,9 @@ int sh( int argc, char **argv, char **envp ) {
         /* check for each built in command and implement */
             printf(" Executing built-in: %s\n", commandList[0]);
             runBuiltIn(commandList, pathList, envp);
-        } else if (strstr(commandList[0], "./") || strstr(commandList[0], "../") || strstr(commandList[0], "/")) {
-            // If the command contains an absolute path ie. /, ./ ../,  check for executability
-            // If it is executable, then just run it.
-            if (access(commandList[0], X_OK) == 0) { // If it's executable
-                printf(" Executing: %s\n", commandList[0]);
-                system(commandList[0]); // The system function runs an executable
-            }
-        } else { // It is an external command
+        } else {
             // When this function is done all of its local variables pop off the stack so no need to memset
-            handleExternalCommand(commandList, envp, pathList, status); 
-            printShell();
+            runExecutable(commandList, envp, pathList, status); 
         }
         memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
         }
@@ -77,22 +68,32 @@ int sh( int argc, char **argv, char **envp ) {
 //***************************************************************************************************************
 
 /**
- * handleExternalCommand, spawns a child process using fork, then runs the command
- *                        with execve. The parent process does a waitpid.
+ * runExecutable, if the file contains an absolute path then check if it is executable
+ *                   and start a new process with fork and run it with exec. If it is not a
+ *                   direct path, then find where the command is using the which function and
+ *                   use fork/exec on that. 
  * 
  * Consumes: Three lists of strings, An integer
  * Produces: Nothing
  */
-void handleExternalCommand(char **commandList, char **envp, struct pathelement *pathList, int status) {
+void runExecutable(char **commandList, char **envp, struct pathelement *pathList, int status) {
      /* find it */
-    char *externalPath = which(commandList[0], pathList);
-    if (externalPath != NULL)
-        printf(" Executing %s\n", externalPath);
-
+    char *externalPath;
+    // If the command contains an absolute path ie. /, ./ ../, then check for executability
+    if (strstr(commandList[0], "./") || strstr(commandList[0], "../") || strstr(commandList[0], "/")) { 
+        if (access(commandList[0], X_OK) == 0) { // If it's executable
+            printf(" Executing: %s\n", commandList[0]);
+            externalPath = commandList[0];
+        } else { // Else the file is not executable
+            errno = EACCES; // Permission denied
+            printf(" %s: %s\n", commandList[0], strerror(errno));
+        }
+    } else { // Find the command in the PATH environment variable, executability for this is already checked in which
+        externalPath = which(commandList[0], pathList); 
+    }
     if (externalPath != NULL) {
+        printf(" Executing %s\n", externalPath);
         /* do fork(), execve() and waitpid() */
-        char *envp[] = { NULL }; // Give execve something to chew on
-
         if ((pid = fork()) < 0) { // Child
             perror(" fork error");
         } else if (pid == 0) {
@@ -102,7 +103,10 @@ void handleExternalCommand(char **commandList, char **envp, struct pathelement *
         }
         if ((pid = waitpid(pid, &status, 0)) < 0) { // Parent
             perror(" waitpid error");
-        } 
+        }
+        if (WIFEXITED(status) != 0) { // If the child process failed, ie. returned non 0 value
+            printf(" Exit status of the child: %d\n", WEXITSTATUS(status)); // Print actual exit status
+        }
     } 
 }
 
@@ -115,9 +119,10 @@ void handleExternalCommand(char **commandList, char **envp, struct pathelement *
  * Produces: An integer
  */
 int isBuiltIn(char *command) {
+    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv"};
     int inList = 0; // False
     for (int i = 0; i < BUILT_IN_COMMAND_COUNT; i++) {
-        if (strcmp(command, BUILT_IN_COMMANDS[i]) == 0) { // strcmp returns 0 if true
+        if (strcmp(command, builtInCommands[i]) == 0) { // strcmp returns 0 if true
             inList = 1; // True
             break;
         }

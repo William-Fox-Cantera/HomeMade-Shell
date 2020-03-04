@@ -10,9 +10,6 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
-#include <stdio.h>
-
-
 #include "get_path.h"
 
 int pid;
@@ -21,9 +18,10 @@ int pid;
 int sh( int argc, char **argv, char **envp);
 
 // HELPER FUNCTIONS
-void handleExternalCommand(char **commandList, char **envp, struct pathelement *pathList, int status);
+void runExecutable(char **commandList, char **envp, struct pathelement *pathList, int status);
 int isBuiltIn(char *command); 
 void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
+void sig_handler(int signal); 
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);

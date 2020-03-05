@@ -15,13 +15,14 @@
 int pid;
 
 // MAIN SHELL FUNCTION
-int sh( int argc, char **argv, char **envp);
+int sh(int argc, char **argv, char **envp);
 
 // HELPER FUNCTIONS
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, int status);
 int isBuiltIn(char *command); 
 void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 void sig_handler(int signal); 
+char **handleWildcards(char **commandList, char fundip);
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);

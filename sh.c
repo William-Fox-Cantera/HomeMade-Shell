@@ -10,7 +10,6 @@
 char *prefix; // String that precedes prompt when using the prompt function
 char *previousWorkingDirectory; // System for going back to previous directory with "cd -"
 
-
 //****************************************************************************************************************************
 int sh( int argc, char **argv, char **envp ) {
     // MY VARIABLES
@@ -22,6 +21,9 @@ int sh( int argc, char **argv, char **envp ) {
     char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
     /* Put PATH into a linked list */
     struct pathelement *pathList = get_path(); 
+    int containsStar = 0;
+    int containsQuestionmark = 0;
+    char wildcardCase = 'X'; // Change this baxk to 'X' after use
 
 
     /*
@@ -45,6 +47,10 @@ int sh( int argc, char **argv, char **envp ) {
         // Main Argumment Parser
         char *token = strtok (buffer, " "); 
         for (int i = 0; token != NULL; i++) { 
+            if (strstr(token, "*")) // Globbing support
+                containsStar = 1;
+            if (strstr(token, "?"))
+                containsQuestionmark = 1;
             commandList[i] = token;
             token = strtok (NULL, " "); // Get ris of "-" used in flags for arguments
         }
@@ -53,9 +59,24 @@ int sh( int argc, char **argv, char **envp ) {
             printf(" Executing built-in: %s\n", commandList[0]);
             runBuiltIn(commandList, pathList, envp);
         } else {
+            // Further parsing of commandList if it contains a wildcard
+            // Three cases, it has a ?, it has a *, or it has both of these
+            if (containsQuestionmark && containsStar) {
+                wildcardCase = 'B';
+                handleWildcards(commandList, 'B');
+            } else if (containsStar) {
+                wildcardCase = '*'; 
+                handleWildcards(commandList, '*');
+            } else if (containsQuestionmark) {
+                wildcardCase = '?';
+                handleWildcards(commandList, '?');
+            }
             // When this function is done all of its local variables pop off the stack so no need to memset
             runExecutable(commandList, envp, pathList, status); 
-        }
+        } // Reset stuff for next iteration
+        wildcardCase = 'X'; // Default
+        containsQuestionmark = 0;
+        containsStar = 0;
         memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
         }
         return 0;
@@ -66,6 +87,32 @@ int sh( int argc, char **argv, char **envp ) {
 
 // HELPER FUNCTIONS
 //***************************************************************************************************************
+
+/**
+ * handleWildcards, expands wildcards if they are given with the external command
+ * 
+ * Consumes: A list of strings
+ * Produces: A list of strings
+ */
+char **handleWildcards(char **commandList, char fundip) {
+    if (fundip == 'B') { // Case where 
+        for (int i = 1; commandList[i] != NULL; i++) {
+            if (strstr(commandList[i], "?"))
+                printf(" ? found\n");  
+        }
+    } else if (fundip == '*') {
+        for (int i = 1; commandList[i] != NULL; i++) {
+            if (strstr(commandList[i], "?"))
+                printf(" ? found\n");  
+        }
+    } else if (fundip == '?') {
+        for (int i = 1; commandList[i] != NULL; i++) {
+            if (strstr(commandList[i], "?"))
+                printf(" ? found\n");  
+        }
+    }
+}
+
 
 /**
  * runExecutable, if the file contains an absolute path then check if it is executable
@@ -338,11 +385,11 @@ void printWorkingDirectory() {
  */
 void prompt(char **commandList) {
     if (commandList[1] != NULL) {
-        prefix = '\0'; // strcat must use null terminated strings
         prefix = (char *)malloc(sizeof(commandList));
-        for (int i = 1; commandList[i] != NULL; i++) {
-            strcat(prefix, commandList[i]); // Remember prefix has a global scope
+        prefix = commandList[1];
+        for (int i = 2; commandList[i] != NULL; i++) {
             strcat(prefix, " ");
+            strcat(prefix, commandList[i]); // Remember prefix has a global scope
         }
     } else {
         char tempBuffer[BUFFERSIZE];

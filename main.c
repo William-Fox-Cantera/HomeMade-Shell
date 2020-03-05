@@ -13,6 +13,6 @@ void sig_handler(int signal) {
   /* define your signal handler */
   //if(signal == SIGINT) 
   printf("\nInterrupt\n");
-  printShell();
+  //printShell();
 }
 

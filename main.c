@@ -12,6 +12,6 @@ int main( int argc, char **argv, char **envp ) {
 void sig_handler(int signal) {
   /* define your signal handler */
   if(signal == SIGINT) 
-      printf(" Interrupt/n");
+      printf(" Interrupt\n");
 }
 

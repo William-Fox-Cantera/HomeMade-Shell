@@ -1,20 +1,24 @@
 #include "sh.h"
 
+
 int main( int argc, char **argv, char **envp ) {
   /* put signal set up stuff here */
-  signal(SIGTSTP, sig_handler);
+  sigignore(SIGTSTP);
+  sigignore(SIGTERM);
   signal(SIGINT, sig_handler);
   return sh(argc, argv, envp);
 }
 
+/**
+ * sig_handler, handles when ctrl+c is pressed. It will kill the running child, 
+ *              otherwise it is ignored.
+ * 
+ * Consumes: An integer
+ * Produces: Nothing
+ */
 void sig_handler(int signal) {
   /* define your signal handler */
-  if (signal == SIGTSTP) {
-    printf(" Interrupt\n");
-    printShell();
-    fflush(stdout);
-  }
-  if (signal == SIGINT) {
+  if (signal == SIGINT) { // For ctrl+c
     printf(" Interrupt\n");
     printShell();
     fflush(stdout);

@@ -1,3 +1,4 @@
+#include <signal.h> 
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -8,10 +9,10 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <signal.h>
 #include <errno.h>
 #include <glob.h>
 #include "get_path.h"
+
 
 int pid;
 
@@ -40,12 +41,13 @@ void killIt(char **commandList);
 
 // CONVIENIENCE FUNCTIONS
 void printShell();
-void listHandler(char *commandList[]);
-void whichHandler(char *commandList[], struct pathelement *pathList);
-void whereHandler(char *commandList[], struct pathelement *pathList);
+void listHandler(char **commandList);
+void whichHandler(char **commandList, struct pathelement *pathList);
+void whereHandler(char **commandList, struct pathelement *pathList);
 
 // CONSTANTS
 #define PROMPTMAX 32
 #define MAXARGS 10
 #define BUFFERSIZE 512
 #define BUILT_IN_COMMAND_COUNT 11
+#define MAX_COMMAND_LOCATIONS 10

@@ -24,10 +24,11 @@ int sh( int argc, char **argv, char **envp ) {
     glob_t  paths;
     int csource;
     char **p;
-    int wasGlobbed;
+    int wasGlobbed, noPattern;
 
     /* Main Loop For Shell */
     while (go) {
+        wasGlobbed, noPattern = 0; // For continuing the loop of no globbing pattern was matched
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, getcwd(NULL, 0)) != 0)
             previousWorkingDirectory = currentWorkingDirectory;
@@ -58,6 +59,7 @@ int sh( int argc, char **argv, char **envp ) {
                 } else { // If no glob pattern was found
                     errno = GLOB_NOMATCH;
                     perror(" glob ");
+                    noPattern = 1;
                     break;
                 }
             } else {
@@ -65,6 +67,8 @@ int sh( int argc, char **argv, char **envp ) {
             }
             token = strtok(NULL, " ");
         }
+        if (wasGlobbed && noPattern) // If globbing was attempted but no patterns matched, continue
+            continue;
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
         /* check for each built in command and implement */
             printf(" Executing built-in: %s\n", commandList[0]);
@@ -362,8 +366,8 @@ void prompt(char **commandList) {
         prefix = (char *)malloc(sizeof(commandList));
         strcpy(prefix, "");
         for (int i = 1; commandList[i] != NULL; i++) {
-            strcat(prefix, " ");
             strcat(prefix, commandList[i]); // Remember prefix has a global scope
+            strcat(prefix, " ");
         }
     } else {
         char tempBuffer[BUFFERSIZE];
@@ -427,10 +431,10 @@ char *which(char *command, struct pathelement *pathlist) {
  */
 char **where(char *command, struct pathelement *pathlist ) {
 /* similarly loop through finding all locations of command */
-    char temp[100];
+    char temp[BUFFERSIZE];
     DIR *dp;
     struct dirent *dirp;
-    char **pathArr;
+    char **pathArr = malloc(sizeof(char *)*MAX_COMMAND_LOCATIONS);
     int i = 0; 
     while (pathlist) { // Traverse path until NULL 
         if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
@@ -445,8 +449,7 @@ char **where(char *command, struct pathelement *pathlist ) {
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
                     strcat(temp, "\n");
-                    pathArr[i] = (char *)malloc(sizeof(temp));
-                    strcpy(pathArr[i], temp); // dest, src
+                    pathArr[i] = temp; // dest, src
                     i++;
                 }
             }
@@ -454,12 +457,7 @@ char **where(char *command, struct pathelement *pathlist ) {
         closedir(dp);
         pathlist = pathlist->next;
     }
-    if (pathArr[0] == NULL) {
-        printf(" %s: Command not found.\n", command);
-        return NULL; // Null if not found
-    } else {
-        return pathArr;
-    }
+    return pathArr;
 } /* where() */
 
 
@@ -516,7 +514,7 @@ void printShell() {
   if (prefix != NULL)
     printf("%s [%s]>", prefix, ptr); // prefix is global in scope
   else
-    printf(" [%s]>", ptr);
+    printf("[%s]>", ptr);
   free(ptr); 
 }
 
@@ -528,7 +526,7 @@ void printShell() {
  * Consumes: An array of strings
  * Produces: Nothing
  */
-void listHandler(char *commandList[]) {
+void listHandler(char **commandList) {
     if (commandList[1] == NULL) {
             list("");
     } else {
@@ -544,7 +542,7 @@ void listHandler(char *commandList[]) {
  * Consumes: Two lists of strings
  * Produces: Nothing
  */
-void whichHandler(char *commandList[], struct pathelement *pathList) {
+void whichHandler(char **commandList, struct pathelement *pathList) {
     char *pathToCmd;
     for (int i = 1; commandList[i] != NULL; i++) {
             pathToCmd = which(commandList[i], pathList);
@@ -560,13 +558,19 @@ void whichHandler(char *commandList[], struct pathelement *pathList) {
  * Consumes: Two lists of strings
  * Produces: Nothing
  */
-void whereHandler(char *commandList[], struct pathelement *pathList) {
+void whereHandler(char **commandList, struct pathelement *pathList) {
     char **paths;
+    int isNull = 1;
     for (int i = 1; commandList[i] != NULL; i++) {
         paths = where(commandList[i], pathList);
-        for (int i = 0; paths[i] != NULL; i++) {
-            printf(" %s\n", paths[i]);
+        for (int j = 0; paths[j] != NULL; j++) {
+            isNull = 0;
+            printf(" %s\n", paths[j]);
         }
+        if (isNull) {
+            errno = ENOENT;
+            perror(" where ");
+        }
+        free(paths);
     }
-    //free(paths);
 }

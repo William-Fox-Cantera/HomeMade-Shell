@@ -445,7 +445,7 @@ char **where(char *command, struct pathelement *pathlist ) {
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
                     strcat(temp, "\n");
-                    pathArr[i] = (char *)malloc(100);
+                    pathArr[i] = (char *)malloc(sizeof(temp));
                     strcpy(pathArr[i], temp); // dest, src
                     i++;
                 }

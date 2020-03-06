@@ -21,14 +21,12 @@ int sh( int argc, char **argv, char **envp ) {
     char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
     /* Put PATH into a linked list */
     struct pathelement *pathList = get_path(); 
-    int containsStar = 0;
-    int containsQuestionmark = 0;
-    char wildcardCase = 'X'; // Change this baxk to 'X' after use
+    glob_t  paths;
+    int csource;
+    char **p;
+    int wasGlobbed;
 
-
-    /*
-    Main Loop For Shell
-    */
+    /* Main Loop For Shell */
     while (go) {
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, getcwd(NULL, 0)) != 0)
@@ -47,37 +45,39 @@ int sh( int argc, char **argv, char **envp ) {
         // Main Argumment Parser
         char *token = strtok (buffer, " "); 
         for (int i = 0; token != NULL; i++) { 
-            if (strstr(token, "*")) // Globbing support
-                containsStar = 1;
-            if (strstr(token, "?"))
-                containsQuestionmark = 1;
-            commandList[i] = token;
-            token = strtok (NULL, " "); // Get ris of "-" used in flags for arguments
+            if ((strstr(token, "*") != NULL) || (strstr(token, "?") != NULL)) { // Globbing support
+                wasGlobbed = 1;
+                csource = glob(token, 0, NULL, &paths);	   
+                if (csource == 0) {
+                    for (p = paths.gl_pathv; *p != NULL; p++) {
+                        commandList[i] = (char *)malloc(sizeof(*p)); // Must malloc for glob
+                        strcpy(commandList[i], *p);
+                        i++;
+                    }
+                    globfree(&paths);
+                } else { // If no glob pattern was found
+                    errno = GLOB_NOMATCH;
+                    perror(" glob ");
+                    break;
+                }
+            } else {
+                commandList[i] = token;
+            }
+            token = strtok(NULL, " ");
         }
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
         /* check for each built in command and implement */
             printf(" Executing built-in: %s\n", commandList[0]);
             runBuiltIn(commandList, pathList, envp);
         } else {
-            // Further parsing of commandList if it contains a wildcard
-            // Three cases, it has a ?, it has a *, or it has both of these
-            if (containsQuestionmark && containsStar) {
-                wildcardCase = 'B';
-                handleWildcards(commandList, 'B');
-            } else if (containsStar) {
-                wildcardCase = '*'; 
-                handleWildcards(commandList, '*');
-            } else if (containsQuestionmark) {
-                wildcardCase = '?';
-                handleWildcards(commandList, '?');
-            }
             // When this function is done all of its local variables pop off the stack so no need to memset
             runExecutable(commandList, envp, pathList, status); 
         } // Reset stuff for next iteration
-        wildcardCase = 'X'; // Default
-        containsQuestionmark = 0;
-        containsStar = 0;
-        memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
+            memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
+            if (wasGlobbed) { // Globbing requires memory allocation, free it
+                for (int i = 0; commandList[i] != NULL; i++) 
+                    free(commandList[i]);
+            }
         }
         return 0;
     } /* sh() */
@@ -94,23 +94,8 @@ int sh( int argc, char **argv, char **envp ) {
  * Consumes: A list of strings
  * Produces: A list of strings
  */
-char **handleWildcards(char **commandList, char fundip) {
-    if (fundip == 'B') { // Case where 
-        for (int i = 1; commandList[i] != NULL; i++) {
-            if (strstr(commandList[i], "?"))
-                printf(" ? found\n");  
-        }
-    } else if (fundip == '*') {
-        for (int i = 1; commandList[i] != NULL; i++) {
-            if (strstr(commandList[i], "?"))
-                printf(" ? found\n");  
-        }
-    } else if (fundip == '?') {
-        for (int i = 1; commandList[i] != NULL; i++) {
-            if (strstr(commandList[i], "?"))
-                printf(" ? found\n");  
-        }
-    }
+char **handleWildcards(char *token) {
+
 }
 
 
@@ -151,7 +136,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
         if ((pid = waitpid(pid, &status, 0)) < 0) { // Parent
             perror(" waitpid error");
         }
-        if (WIFEXITED(status) != 0) { // If the child process failed, ie. returned non 0 value
+        if (!WIFEXITED(status)) { // If the child process failed, ie. returned non 0 value
             printf(" Exit status of the child: %d\n", WEXITSTATUS(status)); // Print actual exit status
         }
     } 
@@ -355,7 +340,6 @@ void printPid() {
  * Produces: Nothing
  */
 void exitProgram() {
-    free(prefix);
     exit(0); // Exit without error
 }
 
@@ -386,8 +370,8 @@ void printWorkingDirectory() {
 void prompt(char **commandList) {
     if (commandList[1] != NULL) {
         prefix = (char *)malloc(sizeof(commandList));
-        prefix = commandList[1];
-        for (int i = 2; commandList[i] != NULL; i++) {
+        strcpy(prefix, "");
+        for (int i = 1; commandList[i] != NULL; i++) {
             strcat(prefix, " ");
             strcat(prefix, commandList[i]); // Remember prefix has a global scope
         }

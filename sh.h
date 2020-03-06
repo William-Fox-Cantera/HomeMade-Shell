@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
+#include <glob.h>
 #include "get_path.h"
 
 int pid;
@@ -22,7 +23,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
 int isBuiltIn(char *command); 
 void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 void sig_handler(int signal); 
-char **handleWildcards(char **commandList, char fundip);
+char **handleWildcards(char *token);
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);

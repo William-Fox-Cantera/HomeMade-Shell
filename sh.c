@@ -89,17 +89,6 @@ int sh( int argc, char **argv, char **envp ) {
 //***************************************************************************************************************
 
 /**
- * handleWildcards, expands wildcards if they are given with the external command
- * 
- * Consumes: A list of strings
- * Produces: A list of strings
- */
-char **handleWildcards(char *token) {
-
-}
-
-
-/**
  * runExecutable, if the file contains an absolute path then check if it is executable
  *                   and start a new process with fork and run it with exec. If it is not a
  *                   direct path, then find where the command is using the which function and

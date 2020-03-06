@@ -567,5 +567,6 @@ void whereHandler(char *commandList[], struct pathelement *pathList) {
         for (int i = 0; paths[i] != NULL; i++) {
             printf(" %s\n", paths[i]);
         }
+        free(paths);
     }
 }

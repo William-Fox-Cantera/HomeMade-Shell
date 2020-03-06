@@ -128,6 +128,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
         if (!WIFEXITED(status)) { // If the child process failed, ie. returned non 0 value
             printf(" Exit status of the child: %d\n", WEXITSTATUS(status)); // Print actual exit status
         }
+        free(externalPath); // Which mallocs space for returned string
     } 
 }
 
@@ -424,12 +425,13 @@ char *which(char *command, struct pathelement *pathlist) {
  * Consumes: A string, A list of strings
  * Produces: A string
  */
-char *where(char *command, struct pathelement *pathlist ) {
-  /* similarly loop through finding all locations of command */
-  char temp[BUFFERSIZE];
+char **where(char *command, struct pathelement *pathlist ) {
+/* similarly loop through finding all locations of command */
+    char temp[100];
     DIR *dp;
     struct dirent *dirp;
-    char *path = NULL;
+    char **pathArr;
+    int i = 0; 
     while (pathlist) { // Traverse path until NULL 
         if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
             errno = ENOTDIR;
@@ -437,25 +439,26 @@ char *where(char *command, struct pathelement *pathlist ) {
             exit(errno);
         } 
         while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
-            if (strstr(dirp->d_name, command) == 0) { // If command is found do some string copying then return
+            if (strcmp(dirp->d_name, command) == 0) { // If command is found do some string copying then return
                 if (access(pathlist->element, X_OK) == 0) { // Make sure to only return the executable command
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
                     strcat(temp, "\n");
-                    strcpy(path, temp); // dest, src
+                    pathArr[i] = (char *)malloc(100);
+                    strcpy(pathArr[i], temp); // dest, src
+                    i++;
                 }
             }
         }
         closedir(dp);
         pathlist = pathlist->next;
     }
-    if (path == NULL) {
+    if (pathArr[0] == NULL) {
         printf(" %s: Command not found.\n", command);
         return NULL; // Null if not found
     } else {
-        char *path = (char * )malloc(strlen(temp));
-        return path;
+        return pathArr;
     }
 } /* where() */
 
@@ -558,7 +561,11 @@ void whichHandler(char *commandList[], struct pathelement *pathList) {
  * Produces: Nothing
  */
 void whereHandler(char *commandList[], struct pathelement *pathList) {
+    char **paths;
     for (int i = 1; commandList[i] != NULL; i++) {
-            which(commandList[i], pathList);
+        paths = where(commandList[i], pathList);
+        for (int i = 0; paths[i] != NULL; i++) {
+            printf(" %s\n", paths[i]);
         }
+    }
 }

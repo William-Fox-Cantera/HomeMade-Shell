@@ -26,7 +26,7 @@ void sig_handler(int signal);
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);
-char *where(char *command, struct pathelement *pathList);
+char **where(char *command, struct pathelement *pathList);
 void list (char *dir);
 void printenv(char **envp);
 void printWorkingDirectory();

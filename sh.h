@@ -11,6 +11,8 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <glob.h>
+#include <sys/time.h>
+#include <sys/stat.h>
 #include "get_path.h"
 
 
@@ -20,10 +22,13 @@ int pid;
 int sh(int argc, char **argv, char **envp);
 
 // HELPER FUNCTIONS
-void runExecutable(char **commandList, char **envp, struct pathelement *pathList, int status);
+void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int isBuiltIn(char *command); 
 void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
-void sig_handler(int signal); 
+void sigHandler(int signal);
+void childHandler(int sig);
+void alarmHandler(int);
+char *getExternalPath(char **commandList, struct pathelement *pathList);
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);

@@ -1,11 +1,10 @@
 #include "sh.h"
 
-
 int main( int argc, char **argv, char **envp ) {
   /* put signal set up stuff here */
   sigignore(SIGTSTP);
   sigignore(SIGTERM);
-  signal(SIGINT, sig_handler);
+  signal(SIGINT, sigHandler);
   return sh(argc, argv, envp);
 }
 
@@ -16,7 +15,7 @@ int main( int argc, char **argv, char **envp ) {
  * Consumes: An integer
  * Produces: Nothing
  */
-void sig_handler(int signal) {
+void sigHandler(int signal) {
   /* define your signal handler */
   if (signal == SIGINT) { // For ctrl+c
     printf(" Interrupt\n");
@@ -24,4 +23,3 @@ void sig_handler(int signal) {
     fflush(stdout);
   }
 }
-

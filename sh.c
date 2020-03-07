@@ -2,27 +2,40 @@
 
 /* TODO: 
     - Use stat not access in the runExecutable function
+    - Handle memory leaks
 */
 
 //****************************************************************************************************************************
 // GLOBALS
 char *prefix; // String that precedes prompt when using the prompt function
 char *previousWorkingDirectory; // System for going back to previous directory with "cd -"
+int timeout = 0;
+int childDone = 0;
 
 //****************************************************************************************************************************
 int sh(int argc, char **argv, char **envp) {
     // MY VARIABLES
-    int status, csource, wasGlobbed, noPattern;
+    int csource, wasGlobbed, noPattern;
     int go = 1; // Runs main loop
     int ignoreEOF = 1;
     char buffer[BUFFERSIZE]; // Read commands from stdin
-    pid_t pid;
     char *commandList[BUFFERSIZE]; // Store the commands and flags typed by the user
     char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
-    glob_t  paths;
+    glob_t paths;
     char **p;
     char *token;
+
+    if (argv[1] == NULL) { // If no argument was given
+        errno = EINVAL;
+        perror("Specify time limit");
+        return;
+    } 
+    if (atoi(argv[1]) == 0) { // If an invalid time limit was given
+        errno = EINVAL;
+        perror("Time limit");
+        return;
+    }
 
     /* Main Loop For Shell */
     while (go) {
@@ -81,7 +94,7 @@ int sh(int argc, char **argv, char **envp) {
             runBuiltIn(commandList, pathList, envp);
         } else {
             // When this function is done all of its local variables pop off the stack so no need to memset
-            runExecutable(commandList, envp, pathList, status); 
+            runExecutable(commandList, envp, pathList, argv); 
         } // Reset stuff for next iteration
         memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
         if (wasGlobbed) { // Globbing requires memory allocation, free it
@@ -105,24 +118,12 @@ int sh(int argc, char **argv, char **envp) {
  *                   direct path, then find where the command is using the which function and
  *                   use fork/exec on that. 
  * 
- * Consumes: Three lists of strings, An integer
+ * Consumes: Three lists of strings, a struct
  * Produces: Nothing
  */
-void runExecutable(char **commandList, char **envp, struct pathelement *pathList, int status) {
-     /* find it */
-    char *externalPath;
-    // If the command contains an absolute path ie. /, ./ ../, then check for executability
-    if (strstr(commandList[0], "./") || strstr(commandList[0], "../") || strstr(commandList[0], "/")) { 
-        if (access(commandList[0], X_OK) == 0) { // TODO: Use stat not access
-            printf(" Executing: %s\n", commandList[0]);
-            externalPath = commandList[0];
-        } else { // Else the file is not executable
-            errno = EACCES; // Permission denied
-            printf(" %s: %s\n", commandList[0], strerror(errno));
-        }
-    } else { // Find the command in the PATH environment variable, executability for this is already checked in which
-        externalPath = which(commandList[0], pathList); 
-    }
+void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
+    int status;
+    char *externalPath = getExternalPath(commandList, pathList);
     if (externalPath != NULL) {
         printf(" Executing %s\n", externalPath);
         /* do fork(), execve() and waitpid() */
@@ -133,13 +134,78 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
             printf(" couldn't execute: %s", strerror(errno));
             exit(127);
         }
-        if ((pid = waitpid(pid, &status, 0)) < 0) { // Parent
-            perror(" waitpid error");
-        }
+        signal(SIGALRM, alarmHandler); // Callback to update timeout global
+        signal(SIGCHLD, childHandler);
+        alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
+        pause(); // Stop everything until child dies
+        if (timeout) {
+            int result = waitpid(pid, &status, WNOHANG);
+            if (result == 0) {
+                printf("!!! taking too long to execute this command !!!\n"); 
+                kill(pid, 9); // If child is still running after time limit, kill it
+                wait(NULL);
+            } 
+        } 
         printf(" exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
-        free(externalPath); // Which mallocs space for returned string
+        free(externalPath); // Free it
     } 
 }
+
+
+/**
+ * childHandler, callback function for signal SIGCHLD, this function literally 
+ *               does nothing except satisfy signals demand for a callback.
+ */
+void childHandler(int signal) {
+    return;
+}
+
+
+/**
+ * alarmHandler, updates the global variable timeout when called by signal(2)
+ *               in the runExecutable function.
+ * 
+ * Consumes: An integer
+ * Produces: Nothing
+ */
+void alarmHandler(int signal) {
+    timeout = 1;
+}
+
+/**
+ * getExternalPath, either returns the command if it is an absolute path ie. contains
+ *                  a / ./ or ../ or something of the like, or returns the path to an 
+ *                  executable found by the which function.
+ * 
+ * Consumes: A list of strings, a struct
+ * Produces: A string
+ */
+char *getExternalPath(char **commandList, struct pathelement *pathList) {
+    char *externalPath;
+    char temp[BUFFERSIZE];
+    struct stat file;
+    // If the command contains an absolute path ie. /, ./ ../, then check for executability
+    if (strstr(commandList[0], "./") || strstr(commandList[0], "../") || strstr(commandList[0], "/")) { 
+        if (stat(commandList[0], &file) == 0) { // If stat worked
+            if (file.st_mode & S_IXUSR  && file.st_mode & S_IXGRP && file.st_mode & S_IXOTH) { // Make sure it is executable by User, Group, Others
+                printf(" Executing: %s\n", commandList[0]);
+                strcpy(temp, commandList[0]);
+                externalPath = (char *)malloc(sizeof(temp));
+                strcpy(externalPath, temp);
+            } else {
+                errno = EACCES; // Permission denied
+                printf(" %s: %s\n", commandList[0], strerror(errno));
+                return NULL;
+            }
+        } else { // Else the file is not executable
+            perror("stat error");
+            return NULL;
+        }
+    } else { // Find the command in the PATH environment variable, executability for this is already checked in which
+        externalPath = which(commandList[0], pathList); // Must free
+    }
+    return externalPath;
+} 
 
 
 /**

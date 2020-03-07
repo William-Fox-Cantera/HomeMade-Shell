@@ -27,7 +27,7 @@ void sig_handler(int signal);
 
 // BUILT IN COMMAND FUNCTIONS
 char *which(char *command, struct pathelement *pathList);
-char **where(char *command, struct pathelement *pathList);
+char *where(char *command, struct pathelement *pathList);
 void list (char *dir);
 void printenv(char **envp);
 void printWorkingDirectory();
@@ -36,7 +36,7 @@ void exitProgram();
 void printPid();
 void changeDirectory(char *commandList[]);
 void printEnvironment(char **commandList, char **envp); 
-void setEnvironment(char **commandList, char **envp);
+void setEnvironment(char **commandList, char **envp, struct pathelement *pathList);
 void killIt(char **commandList);
 
 // CONVIENIENCE FUNCTIONS
@@ -44,10 +44,10 @@ void printShell();
 void listHandler(char **commandList);
 void whichHandler(char **commandList, struct pathelement *pathList);
 void whereHandler(char **commandList, struct pathelement *pathList);
+void freePath(struct pathelement *pathList);
 
 // CONSTANTS
 #define PROMPTMAX 32
 #define MAXARGS 10
 #define BUFFERSIZE 512
 #define BUILT_IN_COMMAND_COUNT 11
-#define MAX_COMMAND_LOCATIONS 10

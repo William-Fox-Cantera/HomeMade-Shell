@@ -51,6 +51,7 @@ void whichHandler(char **commandList, struct pathelement *pathList);
 void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
+void handleInvalidArguments(char *arg);
 
 // CONSTANTS
 #define PROMPTMAX 32

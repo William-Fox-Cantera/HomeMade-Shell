@@ -13,34 +13,15 @@ int timeout = 0;
 
 //****************************************************************************************************************************
 int sh(int argc, char **argv, char **envp) {
-    // MY VARIABLES
+    handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
     int csource, go = 1, builtInExitCode = 0, wasGlobbed = 0, noPattern = 0; // integers
-    char buffer[BUFFERSIZE]; // Read commands from stdin
-    char *commandList[BUFFERSIZE]; // Store the commands and flags typed by the user
-    char *currentWorkingDirectory = ""; // Give it something to chew on to avoid segentation fault
-    char *cwd; // For updating the current workinig directory
+    char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths;
-    char **p;
-    char *token; // String that will help parse the buffer from fgets
-
-    if (argv[1] == NULL) { // If no argument was given
-        errno = EINVAL;
-        perror("Specify time limit");
-        freePath(pathList);
-        return;
-    } 
-    if (atoi(argv[1]) == 0) { // If an invalid time limit was given
-        errno = EINVAL;
-        perror("Time limit");
-        freePath(pathList);
-        return;
-    }
 
     /* Main Loop For Shell */
     while (go) {
-        memset(commandList, 0, sizeof(commandList)); // // Reset the array of commands with NULL each loop
-        wasGlobbed, noPattern = 0; // For continuing the loop of no globbing pattern was matched
+        wasGlobbed = 0, noPattern = 0; // For continuing the loop of no globbing pattern was matched
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) {
             if (strcmp(currentWorkingDirectory, "")) {
@@ -73,7 +54,7 @@ int sh(int argc, char **argv, char **envp) {
                 wasGlobbed = 1;
                 csource = glob(token, 0, NULL, &paths);	   
                 if (csource == 0) {
-                    for (p = paths.gl_pathv; *p != NULL; p++) {
+                    for (char **p = paths.gl_pathv; *p != NULL; p++) {
                         commandList[i] = (char *)malloc(sizeof(*p)); // Must malloc for glob
                         strcpy(commandList[i], *p);
                         i++;
@@ -104,10 +85,12 @@ int sh(int argc, char **argv, char **envp) {
             // When this function is done all of its local variables pop off the stack so no need to memset
             runExecutable(commandList, envp, pathList, argv); 
         } // Reset stuff for next iteration
+        memset(commandList, 0, sizeof(commandList)); // Avoid invalid free error
         if (wasGlobbed) { // Globbing requires memory allocation, free it
+            free(commandList[0]);
             for (int i = 0; commandList[i] != NULL; i++) 
                 free(commandList[i]);
-            }
+        }
         if (builtInExitCode == 2) 
             pathList = get_path(); // Update the path linked list if it was changed with setenv
     }
@@ -119,6 +102,7 @@ int sh(int argc, char **argv, char **envp) {
 
 // HELPER FUNCTIONS
 //***************************************************************************************************************
+
 
 /**
  * runExecutable, if the file contains an absolute path then check if it is executable
@@ -705,3 +689,27 @@ void freePath(struct pathelement *pathList) {
         free(temp);
     }
 } 
+
+/**
+ * handleInvalidArguments, if no argument was given for the time limit of
+ *                         the program, or the argument could not be converted
+ *                         to an integer with atoi, exit the program with a perror
+ *                         message.
+ * 
+ * Consumes: A string
+ * Produces: Nothing
+ */
+void handleInvalidArguments(char *arg) {
+    if (arg == NULL) { // If no argument was given
+        errno = EINVAL;
+        perror("Specify time limit");
+        exit(0); // Exit without error
+    } 
+    for (int i = 0; i < strlen(arg); i++) { // If an invalid time limit was given
+        if (arg[i] < 48 || arg[i] > 57) { // If the input contains alphabetic characters, invalid
+            errno = EINVAL;
+            perror("Time limit");
+            exit(0); // Exit without error
+        }
+    }
+}

@@ -15,9 +15,6 @@
 #include <sys/stat.h>
 #include "get_path.h"
 
-
-int pid;
-
 // MAIN SHELL FUNCTION
 int sh(int argc, char **argv, char **envp);
 
@@ -52,6 +49,8 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
+char **parser(char *buffer, int *wasGlobbed, int *noPattern);
 
 // CONSTANTS
 #define PROMPTMAX 32

@@ -10,18 +10,19 @@
 char *prefix; // String that precedes prompt when using the prompt function
 char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
 int timeout = 0;
+int pid;
 
 //****************************************************************************************************************************
 int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
-    int csource, go = 1, builtInExitCode = 0, wasGlobbed = 0, noPattern = 0; // integers
+    int csource, argCount, go = 1, builtInExitCode = 0, wasGlobbed = 0, noPattern = 0; // integers
     char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths;
 
-    /* Main Loop For Shell */
-    while (go) {
-        wasGlobbed = 0, noPattern = 0; // For continuing the loop of no globbing pattern was matched
+    while (go) { /* Main Loop For Shell */
+        memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
+        wasGlobbed = 0, noPattern = 0, argCount = 0; // For continuing the loop of no globbing pattern was matched
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) {
             if (strcmp(currentWorkingDirectory, "")) {
@@ -40,12 +41,9 @@ int sh(int argc, char **argv, char **envp) {
             printf("^D\nUse \"exit\" to leave shell.\n");
             continue;
         }
-
+        buffer[strlen(buffer)-1] = '\0'; 
         if (strlen(buffer) < 2) // Ignore empty stdin, ie. user presses enter with no input
             continue; 
-
-        if (buffer[strlen(buffer)-1] == '\n') // Handle \n from fgets
-            buffer[strlen(buffer)-1] = '\0'; 
     
         // Main Argumment Parser
         token = strtok (buffer, " "); 
@@ -67,31 +65,22 @@ int sh(int argc, char **argv, char **envp) {
                     break;
                 }
             } else {
+                argCount++;
                 commandList[i] = token;
             }
             token = strtok(NULL, " ");
         }
         if (wasGlobbed && noPattern) // If globbing was attempted but no patterns matched, continue
             continue;
-        if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
-        /* check for each built in command and implement */
-            printf(" Executing built-in: %s\n", commandList[0]);
-            builtInExitCode = runBuiltIn(commandList, pathList, envp);
-            if (builtInExitCode == 1) { // For exiting entire shell program
-                freeAll(pathList, currentWorkingDirectory); // Cleanup allocs
-                exit(0); // Exit without error
-            }
-        } else {
-            // When this function is done all of its local variables pop off the stack so no need to memset
-            runExecutable(commandList, envp, pathList, argv); 
-        } // Reset stuff for next iteration
-        memset(commandList, 0, sizeof(commandList)); // Avoid invalid free error
+        builtInExitCode = runCommand(commandList, pathList, argv, envp, currentWorkingDirectory);
+        if (builtInExitCode == 2) { // See runBuiltIn for exit codes
+            freePath(pathList);
+            pathList = get_path(); } // Update the path linked list if it was changed with setenv
+        // Reset/free stuff for next iteration
         if (wasGlobbed) { // Globbing requires memory allocation, free it
-            for (int i = 0; commandList[i] != NULL; i++) 
+            for (int i = argCount; commandList[i] != NULL; i++) 
                 free(commandList[i]);
         }
-        if (builtInExitCode == 2) 
-            pathList = get_path(); // Update the path linked list if it was changed with setenv
     }
     return 0;
 } /* sh() */
@@ -226,7 +215,7 @@ int isBuiltIn(char *command) {
  * 
  *             EXIT CODES FOR THIS FUNCTION:
  *                 - 1 --> Exit program
- *                 - 2 --> Path environment variable was changed
+ *                 - 2 --> PATH environment variable was changed
  * 
  * Consumes: A string
  * Produces: Nothing
@@ -659,20 +648,6 @@ void whereHandler(char **commandList, struct pathelement *pathList) {
 
 
 /**
- * freeAll, frees all of the allocs that were not already freed right after
- *          they were used.
- * 
- * Consumes: Stuff
- * Produces: Nothing
- */
-void freeAll(struct pathelement *pathList, char *cwd) {
-    freePath(pathList);
-    free(path); // From get_path.h
-    free(cwd);
-}
-
-
-/**
  * freePath, if the path environment variable is changed vis setenv, 
  *           the linked list data structure holding the path elements
  *           is freed using this function.
@@ -687,6 +662,7 @@ void freePath(struct pathelement *pathList) {
         pathList = pathList->next;
         free(temp);
     }
+    free(path); // From get_path.h
 } 
 
 /**
@@ -711,4 +687,33 @@ void handleInvalidArguments(char *arg) {
             exit(0); // Exit without error
         }
     }
+}
+
+
+/**
+ * runCommand, if the command given is a built-in runs the built-in, else it tries to find the
+ *             path for the external command called and runs that by calling the run external
+ *             function which uses fork annd exec. This function returns an integer based on 
+ *             the exit code if a built-in command was run. See the runBuiltIn function for its
+ *             exit codes.
+ * 
+ * Consumes: Three arrays of strings, a string, a struct
+ * Produces: An integer
+ */
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd) {
+    int builtInExitCode = 0;
+    if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
+            /* check for each built in command and implement */
+                printf(" Executing built-in: %s\n", commandList[0]);
+                builtInExitCode = runBuiltIn(commandList, pathList, envp);             
+                if (builtInExitCode == 1) { // For exiting entire shell program
+                    freePath(pathList);
+                    free(cwd);
+                    exit(0); // Exit without error
+                }
+    } else {
+        // When this function is done all of its local variables pop off the stack so no need to memset
+        runExecutable(commandList, envp, pathList, argv); 
+    }
+    return builtInExitCode;
 }

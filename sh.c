@@ -1,10 +1,5 @@
 #include "sh.h"
 
-/* TODO: 
-    - Use stat not access in the runExecutable function
-    - Handle memory leaks
-*/
-
 //****************************************************************************************************************************
 // GLOBALS
 char *prefix; // String that precedes prompt when using the prompt function

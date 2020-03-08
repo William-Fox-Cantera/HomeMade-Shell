@@ -15,14 +15,14 @@ int pid;
 //****************************************************************************************************************************
 int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
-    int csource, argCount, go = 1, builtInExitCode = 0, wasGlobbed = 0, noPattern = 0; // integers
+    int csource, argCount, go = 1, builtInExitCode = 0, noPattern = 0; // integers
     char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths;
 
     while (go) { /* Main Loop For Shell */
         memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
-        wasGlobbed = 0, noPattern = 0, argCount = 0; // For continuing the loop of no globbing pattern was matched
+        noPattern = 0, argCount = 0; // For continuing the loop of no globbing pattern was matched
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) {
             if (strcmp(currentWorkingDirectory, "")) {
@@ -49,7 +49,6 @@ int sh(int argc, char **argv, char **envp) {
         token = strtok (buffer, " "); 
         for (int i = 0; token != NULL; i++) {
             if ((strstr(token, "*") != NULL) || (strstr(token, "?") != NULL)) { // Globbing support
-                wasGlobbed = 1;
                 csource = glob(token, 0, NULL, &paths);	   
                 if (csource == 0) {
                     for (char **p = paths.gl_pathv; *p != NULL; p++) {
@@ -70,17 +69,14 @@ int sh(int argc, char **argv, char **envp) {
             }
             token = strtok(NULL, " ");
         }
-        if (wasGlobbed && noPattern) // If globbing was attempted but no patterns matched, continue
+        if (noPattern) // If globbing was attempted but no patterns matched, continue
             continue;
         builtInExitCode = runCommand(commandList, pathList, argv, envp, currentWorkingDirectory);
         if (builtInExitCode == 2) { // See runBuiltIn for exit codes
             freePath(pathList);
             pathList = get_path(); } // Update the path linked list if it was changed with setenv
-        // Reset/free stuff for next iteration
-        if (wasGlobbed) { // Globbing requires memory allocation, free it
-            for (int i = argCount; commandList[i] != NULL; i++) 
+            for (int i = argCount; commandList[i] != NULL; i++) // Globbing requires memory allocation, free it
                 free(commandList[i]);
-        }
     }
     return 0;
 } /* sh() */

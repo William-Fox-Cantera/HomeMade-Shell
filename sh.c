@@ -87,7 +87,6 @@ int sh(int argc, char **argv, char **envp) {
         } // Reset stuff for next iteration
         memset(commandList, 0, sizeof(commandList)); // Avoid invalid free error
         if (wasGlobbed) { // Globbing requires memory allocation, free it
-            free(commandList[0]);
             for (int i = 0; commandList[i] != NULL; i++) 
                 free(commandList[i]);
         }

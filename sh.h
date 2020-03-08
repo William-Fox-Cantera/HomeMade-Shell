@@ -24,7 +24,7 @@ int sh(int argc, char **argv, char **envp);
 // HELPER FUNCTIONS
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int isBuiltIn(char *command); 
-void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
+int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 void sigHandler(int signal);
 void childHandler(int sig);
 void alarmHandler(int);
@@ -37,11 +37,11 @@ void list (char *dir);
 void printenv(char **envp);
 void printWorkingDirectory();
 void prompt(char *commandList[]);
-void exitProgram();
+int exitProgram();
 void printPid();
 void changeDirectory(char *commandList[]);
 void printEnvironment(char **commandList, char **envp); 
-void setEnvironment(char **commandList, char **envp, struct pathelement *pathList);
+int setEnvironment(char **commandList, char **envp, struct pathelement *pathList);
 void killIt(char **commandList);
 
 // CONVIENIENCE FUNCTIONS
@@ -49,6 +49,7 @@ void printShell();
 void listHandler(char **commandList);
 void whichHandler(char **commandList, struct pathelement *pathList);
 void whereHandler(char **commandList, struct pathelement *pathList);
+void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 
 // CONSTANTS

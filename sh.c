@@ -8,51 +8,55 @@
 //****************************************************************************************************************************
 // GLOBALS
 char *prefix; // String that precedes prompt when using the prompt function
-char *previousWorkingDirectory; // System for going back to previous directory with "cd -"
+char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
 int timeout = 0;
-int childDone = 0;
 
 //****************************************************************************************************************************
 int sh(int argc, char **argv, char **envp) {
     // MY VARIABLES
-    int csource, wasGlobbed, noPattern;
-    int go = 1; // Runs main loop
-    int ignoreEOF = 1;
+    int csource, go = 1, builtInExitCode = 0, wasGlobbed = 0, noPattern = 0; // integers
     char buffer[BUFFERSIZE]; // Read commands from stdin
     char *commandList[BUFFERSIZE]; // Store the commands and flags typed by the user
-    char *currentWorkingDirectory = getcwd(NULL, 0); // Initialize to avoid segmentation fault
+    char *currentWorkingDirectory = ""; // Give it something to chew on to avoid segentation fault
+    char *cwd; // For updating the current workinig directory
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths;
     char **p;
-    char *token;
+    char *token; // String that will help parse the buffer from fgets
 
     if (argv[1] == NULL) { // If no argument was given
         errno = EINVAL;
         perror("Specify time limit");
+        freePath(pathList);
         return;
     } 
     if (atoi(argv[1]) == 0) { // If an invalid time limit was given
         errno = EINVAL;
         perror("Time limit");
+        freePath(pathList);
         return;
     }
 
     /* Main Loop For Shell */
     while (go) {
+        memset(commandList, 0, sizeof(commandList)); // // Reset the array of commands with NULL each loop
         wasGlobbed, noPattern = 0; // For continuing the loop of no globbing pattern was matched
         /* Keep track of the previous and current working directories */
-        if (strcmp(currentWorkingDirectory, getcwd(NULL, 0)) != 0)
-            previousWorkingDirectory = currentWorkingDirectory;
-        currentWorkingDirectory = getcwd(NULL, 0);
+        if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) {
+            if (strcmp(currentWorkingDirectory, "")) {
+                strcpy(previousWorkingDirectory, currentWorkingDirectory);
+                free(currentWorkingDirectory);
+            }
+            currentWorkingDirectory = getcwd(NULL, 0);
+        }
+        free(cwd);
 
         /* print your prompt */
-        if (ignoreEOF) 
-            printShell();
-        ignoreEOF = 1;
+        printShell();
 
         /* get command line and process */
         if (fgets(buffer, BUFFERSIZE, stdin) == NULL) { // Ignore ctrl+d a.k.a. EOF
-            ignoreEOF = 0;
+            printf("^D\nUse \"exit\" to leave shell.\n");
             continue;
         }
 
@@ -91,18 +95,22 @@ int sh(int argc, char **argv, char **envp) {
         if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
         /* check for each built in command and implement */
             printf(" Executing built-in: %s\n", commandList[0]);
-            runBuiltIn(commandList, pathList, envp);
+            builtInExitCode = runBuiltIn(commandList, pathList, envp);
+            if (builtInExitCode == 1) { // For exiting entire shell program
+                freeAll(pathList, currentWorkingDirectory); // Cleanup allocs
+                exit(0); // Exit without error
+            }
         } else {
             // When this function is done all of its local variables pop off the stack so no need to memset
             runExecutable(commandList, envp, pathList, argv); 
         } // Reset stuff for next iteration
-        memset(commandList, 0, sizeof(commandList)); // Reset the array of commands typed by user each loop
         if (wasGlobbed) { // Globbing requires memory allocation, free it
             for (int i = 0; commandList[i] != NULL; i++) 
                 free(commandList[i]);
             }
-        pathList = get_path(); // Update the path linked list if it was changed with setenv
-        }
+        if (builtInExitCode == 2) 
+            pathList = get_path(); // Update the path linked list if it was changed with setenv
+    }
     return 0;
 } /* sh() */
 
@@ -233,12 +241,18 @@ int isBuiltIn(char *command) {
  *             arguments, its handler function is called, calling the command for each
  *             argument given.
  * 
+ *             EXIT CODES FOR THIS FUNCTION:
+ *                 - 1 --> Exit program
+ *                 - 2 --> Path environment variable was changed
+ * 
  * Consumes: A string
  * Produces: Nothing
  */
-void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
+int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
+    int shouldExit = 0;
+    int pathChanged = 0;
     if (strcmp(commandList[0], "exit") == 0) { // strcmp returns 0 if true
-        exitProgram(); // Exit the program and thus the shell
+        shouldExit = exitProgram(); // Exit the program and thus the shell
     } else if (strcmp(commandList[0], "which") == 0) {
         whichHandler(commandList, pathList);
     } else if (strcmp(commandList[0], "where") == 0) {
@@ -258,8 +272,11 @@ void runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) 
     } else if (strcmp(commandList[0], "printenv") == 0) {
         printEnvironment(commandList, envp);
     } else if (strcmp(commandList[0], "setenv") == 0) {
-        setEnvironment(commandList, envp, pathList);
+        pathChanged = setEnvironment(commandList, envp, pathList);
     }
+    if (pathChanged)
+        return pathChanged;
+    return shouldExit ? 1 : 0;
 }
 
 
@@ -317,9 +334,10 @@ void killIt(char **commandList) {
  *                 Two if the PATH variable is changed.
  * 
  * Consumes: Two lists of strings
- * Produces: Nothing
+ * Produces: An integer
  */
-void setEnvironment(char **commandList, char **envp, struct pathelement *pathList) {
+int setEnvironment(char **commandList, char **envp, struct pathelement *pathList) {
+    int pathChanged = 0;
     if (commandList[3] != NULL) { // Case where more than two arguments are used
         fprintf(stderr, "%s", " setenv: Too many arguments.\n");
     } else if (commandList[1] == NULL) { // Case where command is called with no arguments
@@ -330,8 +348,10 @@ void setEnvironment(char **commandList, char **envp, struct pathelement *pathLis
         if (strcmp("PATH", commandList[1])) {
             freePath(pathList); // Free up space from old path
             setenv("PATH", commandList[2], 1); // Make new path
+            pathChanged = 1; // Return this
         } else {
             setenv(commandList[1], commandList[2], 1); // Should overwrite existing environment variables
+            pathChanged = 1; // Return this
         }
     } else { // Case where called with one argument
         if (strcmp(commandList[1], "PATH") == 0) { // Case where user changes path to empty string
@@ -341,6 +361,7 @@ void setEnvironment(char **commandList, char **envp, struct pathelement *pathLis
             setenv(commandList[1], "", 1); // Empty environment variable
         }
     }
+    return pathChanged ? 2 : 0; // See exit codes in the runBuiltIn function
 }
 
 
@@ -409,13 +430,13 @@ void printPid() {
 
 
 /**
- * exitProgram, exits the program, but frees all allocs beforehand.
+ * exitProgram, returns 1 if called.
  * 
  * Consumes: Nothing
  * Produces: Nothing
  */
-void exitProgram() {
-    exit(0); // Exit without error
+int exitProgram() {
+    return 1; // Exit without error
 }
 
 
@@ -486,7 +507,7 @@ char *which(char *command, struct pathelement *pathlist) {
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
-                    char *path = (char * )malloc(strlen(temp));
+                    char *path = (char *)malloc(strlen(temp));
                     strcpy(path, temp); // dest, src
                     closedir(dp);
                     return path; // Exits function
@@ -564,6 +585,7 @@ void list (char *dir) {
       while ((dirp = readdir(dp)) != NULL)
           printf(" %s\n", dirp->d_name);
       free(cwd);
+      free(dp);
   } else { // Case where list is called with arguments
       if ((dp = opendir(dir)) == NULL) {
           errno = ENOENT;
@@ -650,6 +672,20 @@ void whereHandler(char **commandList, struct pathelement *pathList) {
             printf(" %s: command not found\n", commandList[i]);
         free(paths);
     }
+}
+
+
+/**
+ * freeAll, frees all of the allocs that were not already freed right after
+ *          they were used.
+ * 
+ * Consumes: Stuff
+ * Produces: Nothing
+ */
+void freeAll(struct pathelement *pathList, char *cwd) {
+    freePath(pathList);
+    free(path); // From get_path.h
+    free(cwd);
 }
 
 

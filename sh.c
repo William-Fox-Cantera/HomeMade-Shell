@@ -47,7 +47,7 @@ int sh(int argc, char **argv, char **envp) {
                 csource = glob(token, 0, NULL, &paths);	   
                 if (csource == 0) {
                     for (char **p = paths.gl_pathv; *p != NULL; p++) {
-                        commandList[i] = (char *)malloc(sizeof(*p)); // Must malloc for glob
+                        commandList[i] = (char *)malloc(strlen(*p)+1); // Must malloc for glob, +1 for some reason
                         strcpy(commandList[i], *p);
                         i++;
                     }
@@ -93,16 +93,16 @@ int sh(int argc, char **argv, char **envp) {
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int status;
+    int status = 0;
     char *externalPath = getExternalPath(commandList, pathList);
     if (externalPath != NULL) {
-        printf(" Executing %s\n", externalPath);
+        printf("Executing %s\n", externalPath);
         /* do fork(), execve() and waitpid() */
         if ((pid = fork()) < 0) { // Child
-            perror(" fork error");
+            perror("fork error");
         } else if (pid == 0) {
             execve(externalPath, commandList, envp);
-            printf(" couldn't execute: %s", strerror(errno));
+            printf("couldn't execute: %s", strerror(errno));
             exit(127);
         }
         signal(SIGALRM, alarmHandler); // Callback to update timeout global
@@ -470,7 +470,7 @@ char *which(char *command, struct pathelement *pathlist) {
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
-                    char *path = (char *)malloc(strlen(temp));
+                    char *path = (char *)malloc(strlen(temp)+1); // +1 --> thanks valgrind
                     strcpy(path, temp); // dest, src
                     closedir(dp);
                     return path; // Exits function

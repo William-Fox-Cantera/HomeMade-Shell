@@ -308,18 +308,18 @@ int setEnvironment(char **commandList, char **envp, struct pathelement *pathList
             printf(" \n%s", envp[i]);
         }
     } else if (commandList[2] != NULL) { // Case where called with two arguments
-        if (strcmp("PATH", commandList[1])) {
+        if (strcmp("PATH", commandList[1]) == 0) {
             freePath(pathList); // Free up space from old path
             setenv("PATH", commandList[2], 1); // Make new path
             pathChanged = 1; // Return this
         } else {
             setenv(commandList[1], commandList[2], 1); // Should overwrite existing environment variables
-            pathChanged = 1; // Return this
         }
     } else { // Case where called with one argument
         if (strcmp(commandList[1], "PATH") == 0) { // Case where user changes path to empty string
             freePath(pathList);
             setenv("PATH", "", 1);
+            pathChanged = 1;
         } else {
             setenv(commandList[1], "", 1); // Empty environment variable
         }

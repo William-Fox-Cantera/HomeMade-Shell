@@ -105,6 +105,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
             printf("couldn't execute: %s", strerror(errno));
             exit(127);
         }
+        free(externalPath); // Free it
         signal(SIGALRM, alarmHandler); // Callback to update timeout global
         signal(SIGCHLD, childHandler);
         alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
@@ -118,7 +119,6 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
             } 
         } 
         printf(" exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
-        free(externalPath); // Free it
     } 
 }
 
@@ -173,7 +173,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
             return NULL;
         }
     } else { // Find the command in the PATH environment variable, executability for this is already checked in which
-        externalPath = which(commandList[0], pathList); // Must free
+        strcpy(externalPath, which(commandList[0], pathList)); // Must free
     }
     return externalPath;
 } 
@@ -308,8 +308,7 @@ int setEnvironment(char **commandList, char **envp, struct pathelement *pathList
             printf(" \n%s", envp[i]);
         }
     } else if (commandList[2] != NULL) { // Case where called with two arguments
-        if (strcmp("PATH", commandList[1]) == 0) {
-            freePath(pathList); // Free up space from old path
+        if (strcmp("PATH", commandList[1]) == 0) { // The pathlist linked list gets freed from the main loop
             setenv("PATH", commandList[2], 1); // Make new path
             pathChanged = 1; // Return this
         } else {
@@ -317,7 +316,6 @@ int setEnvironment(char **commandList, char **envp, struct pathelement *pathList
         }
     } else { // Case where called with one argument
         if (strcmp(commandList[1], "PATH") == 0) { // Case where user changes path to empty string
-            freePath(pathList);
             setenv("PATH", "", 1);
             pathChanged = 1;
         } else {
@@ -470,10 +468,10 @@ char *which(char *command, struct pathelement *pathlist) {
                     strcpy(temp, pathlist->element);
                     strcat(temp, "/"); // Special character in UNIX
                     strcat(temp, dirp->d_name); // Concatenate full path name
-                    char *path = (char *)malloc(strlen(temp)+1); // +1 --> thanks valgrind
-                    strcpy(path, temp); // dest, src
+                    char *executablePath = (char *)malloc(strlen(temp)+1); // +1 --> thanks valgrind
+                    strcpy(executablePath, temp); // dest, src
                     closedir(dp);
-                    return path; // Exits function
+                    return executablePath; // Exits function
                 }
             }
         }
@@ -612,8 +610,10 @@ void whichHandler(char **commandList, struct pathelement *pathList) {
     char *pathToCmd;
     for (int i = 1; commandList[i] != NULL; i++) {
             pathToCmd = which(commandList[i], pathList);
-            if (pathToCmd != NULL)
+            if (pathToCmd != NULL) {
                 printf(" %s\n", pathToCmd);
+                free(pathToCmd);
+            }
         }
 }
 

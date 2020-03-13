@@ -10,14 +10,14 @@ int pid;
 //****************************************************************************************************************************
 int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
-    int csource, argCount, go = 1, builtInExitCode = 0, noPattern = 0; // integers
+    int csource, argCount, go = 1, builtInExitCode = 0; // integers
     char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths;
 
     while (go) { /* Main Loop For Shell */
         memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
-        noPattern = 0, argCount = 0; // For continuing the loop of no globbing pattern was matched
+        argCount = 0; // For continuing the loop of no globbing pattern was matched
         /* Keep track of the previous and current working directories */
         if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) {
             if (strcmp(currentWorkingDirectory, "")) {
@@ -36,26 +36,25 @@ int sh(int argc, char **argv, char **envp) {
             printf("^D\nUse \"exit\" to leave shell.\n");
             continue;
         }
-        buffer[strlen(buffer)-1] = '\0'; 
-        if (strlen(buffer) < 2) // Ignore empty stdin, ie. user presses enter with no input
+        buffer[strlen(buffer)-1] = '\0'; // Handle \n made from fgets()
+        if (strlen(buffer) < 1) // Ignore empty stdin, ie. user presses enter with no input
             continue; 
     
         // Main Argumment Parser
-        token = strtok (buffer, " "); 
-        for (int i = 0; token != NULL; i++) {
-            if ((strstr(token, "*") != NULL) || (strstr(token, "?") != NULL)) { // Globbing support
-                csource = glob(token, 0, NULL, &paths);	   
-                if (csource == 0) {
-                    for (char **p = paths.gl_pathv; *p != NULL; p++) {
-                        commandList[i] = (char *)malloc(strlen(*p)+1); // Must malloc for glob, +1 for some reason
-                        strcpy(commandList[i], *p);
+        token = strtok (buffer, " ");                       // HOW GLOBBING IS IMPLEMENTED: I used strstr() to check to see if a * or ? character appear
+        for (int i = 0; token != NULL; i++) {               //                              in the buffer from fgets(). I then used glob(3) to expand the 
+            if ((strstr(token, "*") != NULL) || (strstr(token, "?") != NULL)) { //          possible paths if there are any. If there are no paths, an error
+                csource = glob(token, 0, NULL, &paths);     //                              message is printed and the normal command is called without any	   
+                if (csource == 0) {                         //                              paths such as ls -l. If there were paths, the number of them is
+                    for (char **p = paths.gl_pathv; *p != NULL; p++) {          //          saved in an int variable and the expanded list provided by glob
+                        commandList[i] = (char *)malloc(strlen(*p)+1);          //          is passed off to execve() as an argv array. The glob list is freed
+                        strcpy(commandList[i], *p);                             //          at the end of this while loop using the counter mentioned previously.
                         i++;
                     }
                     globfree(&paths);
                 } else { // If no glob pattern was found
-                    errno = GLOB_NOMATCH;
-                    perror("glob ");
-                    noPattern = 1;
+                    errno = ENOENT;
+                    perror("glob: \n");
                     break;
                 }
             } else {
@@ -64,8 +63,6 @@ int sh(int argc, char **argv, char **envp) {
             }
             token = strtok(NULL, " ");
         }
-        if (noPattern) // If globbing was attempted but no patterns matched, continue
-            continue;
         builtInExitCode = runCommand(commandList, pathList, argv, envp, currentWorkingDirectory);
         if (builtInExitCode == 2) { // See runBuiltIn for exit codes
             freePath(pathList);
@@ -102,8 +99,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
             perror("fork error");
         } else if (pid == 0) {
             execve(externalPath, commandList, envp);
-            printf("couldn't execute: %s", strerror(errno));
-            exit(127);
+            perror("Problem executing: ");
         }
         free(externalPath); // Free it
         signal(SIGALRM, alarmHandler); // Callback to update timeout global

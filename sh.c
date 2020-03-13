@@ -54,7 +54,7 @@ int sh(int argc, char **argv, char **envp) {
                     globfree(&paths);
                 } else { // If no glob pattern was found
                     errno = GLOB_NOMATCH;
-                    perror(" glob ");
+                    perror("glob ");
                     noPattern = 1;
                     break;
                 }
@@ -96,7 +96,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
     int status = 0;
     char *externalPath = getExternalPath(commandList, pathList);
     if (externalPath != NULL) {
-        printf("Executing %s\n", externalPath);
+        printf("Executing: %s\n", externalPath);
         /* do fork(), execve() and waitpid() */
         if ((pid = fork()) < 0) { // Child
             perror("fork error");
@@ -110,12 +110,11 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
         signal(SIGCHLD, childHandler);
         alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
         pause(); // Stop everything until child dies
-        if (timeout) {
+        if (timeout) { // Parent
             int result = waitpid(pid, &status, WNOHANG);
             if (result == 0) {
                 printf("!!! taking too long to execute this command !!!\n"); 
-                kill(pid, 9); // If child is still running after time limit, kill it
-                wait(NULL);
+                kill(pid, SIGINT); // If child is still running after time limit, kill it. SIGTERM allows the process to exit normally.
             } 
         } 
         printf(" exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
@@ -158,14 +157,19 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
     // If the command contains an absolute path ie. /, ./ ../, then check for executability
     if (strstr(commandList[0], "./") || strstr(commandList[0], "../") || strstr(commandList[0], "/")) { 
         if (stat(commandList[0], &file) == 0) { // If stat worked
-            if (file.st_mode & S_IXUSR  && file.st_mode & S_IXGRP && file.st_mode & S_IXOTH) { // Make sure it is executable by User, Group, Others
-                printf(" Executing: %s\n", commandList[0]);
+            if (S_ISDIR(file.st_mode)) { // Case where the path to be executed is a directory
+                errno = EISDIR;
+                printf("shell: %s: %s\n", commandList[0], strerror(errno));
+                return NULL;
+            }
+            if (file.st_mode & S_IXUSR && file.st_mode & S_IXGRP && file.st_mode & S_IXOTH) { // Make sure it is executable by User, Group, Others
+                printf("HEY\n");
                 strcpy(temp, commandList[0]);
                 externalPath = (char *)malloc(sizeof(temp));
                 strcpy(externalPath, temp);
             } else {
                 errno = EACCES; // Permission denied
-                printf(" %s: %s\n", commandList[0], strerror(errno));
+                printf("%s: %s\n", commandList[0], strerror(errno));
                 return NULL;
             }
         } else { // Else the file is not executable
@@ -426,7 +430,9 @@ void printWorkingDirectory() {
  */
 void prompt(char **commandList) {
     if (commandList[1] != NULL) {
-        prefix = (char *)malloc(sizeof(commandList));
+        if (prefix != NULL) // If a new prompt is made, get rid of the old one if it exists
+            free(prefix);
+        prefix = (char *)malloc(sizeof(commandList)+1); // Thanks valgrind
         strcpy(prefix, "");
         for (int i = 1; commandList[i] != NULL; i++) {
             strcat(prefix, commandList[i]); // Remember prefix has a global scope
@@ -437,7 +443,9 @@ void prompt(char **commandList) {
         printf(" input prompt prefix: ");
         fgets(tempBuffer, BUFFERSIZE, stdin);
         tempBuffer[strlen(tempBuffer)-1] = '\0';
-        prefix = (char *)malloc(strlen(tempBuffer));
+        if (prefix != NULL) // If a new prompt is made, get rid of the old one if it exists
+            free(prefix);
+        prefix = (char *)malloc(strlen(tempBuffer)+1); // Thanks valgrind
         strcpy(prefix, tempBuffer); // Copy buffer to prefix
     }
 }
@@ -699,6 +707,7 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
                 builtInExitCode = runBuiltIn(commandList, pathList, envp);             
                 if (builtInExitCode == 1) { // For exiting entire shell program
                     freePath(pathList);
+                    free(prefix);
                     free(cwd);
                     exit(0); // Exit without error
                 }

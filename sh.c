@@ -173,7 +173,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
             return NULL;
         }
     } else { // Find the command in the PATH environment variable, executability for this is already checked in which
-        strcpy(externalPath, which(commandList[0], pathList)); // Must free
+        externalPath = which(commandList[0], pathList); // Must free
     }
     return externalPath;
 } 

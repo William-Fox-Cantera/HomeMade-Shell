@@ -2,6 +2,7 @@
 
 int main( int argc, char **argv, char **envp ) {
   /* put signal set up stuff here */
+  signal(SIGCHLD, childHandler);
   sigignore(SIGTSTP);
   sigignore(SIGTERM);
   signal(SIGINT, sigHandler);

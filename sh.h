@@ -19,11 +19,13 @@
 int sh(int argc, char **argv, char **envp);
 
 // HELPER FUNCTIONS
+int shouldRunAsBackground(char **commandList);
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int isBuiltIn(char *command); 
 int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 void sigHandler(int signal);
-void childHandler(int sig);
+void childHandler(int signal);
 void alarmHandler(int);
 char *getExternalPath(char **commandList, struct pathelement *pathList);
 
@@ -49,7 +51,6 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
 
 // CONSTANTS
 #define PROMPTMAX 32

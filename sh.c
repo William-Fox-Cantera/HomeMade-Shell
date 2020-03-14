@@ -4,29 +4,41 @@
 // GLOBALS
 char *prefix; // String that precedes prompt when using the prompt function
 char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
-int timeout = 0;
-int pid;
+int timeout = 0; // For ensuring processes are killed after the given time limit at argv[0]
+int pid; // Variable for holding the pid of processes 
 
 //****************************************************************************************************************************
+
+
+/**
+ * sh, this is the main faunction for the entire shell. Most of the code in this project is called from here.
+ *     This function contains a while loops that runs until you exit the shell. First some important variables
+ *     are assigned, then into the loop. Input is read using fgets and then the input is parsed. The parser ignores
+ *     spaces and puts the input into an array called commandList which is passed the the argv array to many other
+ *     functions. The parser also handles globbing if necessary, and all memory allocated for the globbing is freed
+ *     at the end of the loop. 
+ * 
+ * Consumes: Two arrays of strings, an integer
+ * Produces: An integer
+ */
 int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
     int csource, argCount, go = 1, builtInExitCode = 0; // integers
     char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
-    glob_t paths;
+    glob_t paths; // For holding the array of possible files produced by globs
 
-    while (go) { /* Main Loop For Shell */
+    while (go) { // Main Loop For Shell 
         memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
         argCount = 0; // For continuing the loop of no globbing pattern was matched
-        /* Keep track of the previous and current working directories */
-        if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) {
+        if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) { // Keep track of the previous and current working directories 
             if (strcmp(currentWorkingDirectory, "")) {
                 strcpy(previousWorkingDirectory, currentWorkingDirectory);
                 free(currentWorkingDirectory);
             }
             currentWorkingDirectory = getcwd(NULL, 0);
         }
-        free(cwd);
+        free(cwd); // getcwd() system call will dynamically allocate memory
 
         /* print your prompt */
         printShell();
@@ -61,7 +73,7 @@ int sh(int argc, char **argv, char **envp) {
                 argCount++;
                 commandList[i] = token;
             }
-            token = strtok(NULL, " ");
+            token = strtok(NULL, " "); // Tokenize by spaces
         }
         builtInExitCode = runCommand(commandList, pathList, argv, envp, currentWorkingDirectory);
         if (builtInExitCode == 2) { // See runBuiltIn for exit codes
@@ -82,9 +94,9 @@ int sh(int argc, char **argv, char **envp) {
 
 /**
  * runExecutable, if the file contains an absolute path then check if it is executable
- *                   and start a new process with fork and run it with exec. If it is not a
- *                   direct path, then find where the command is using the which function and
- *                   use fork/exec on that. 
+*                 and start a new process with fork and run it with exec. If it is not a
+*                 direct path, then find where the command is using the which function and
+*                 use fork/exec on that. 
  * 
  * Consumes: Three lists of strings, a struct
  * Produces: Nothing

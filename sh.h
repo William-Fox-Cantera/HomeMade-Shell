@@ -13,7 +13,8 @@
 #include <glob.h>
 #include <sys/time.h>
 #include <sys/stat.h>
-#include "get_path.h"
+#include <pthread.h>
+#include "lists.h"
 
 // MAIN SHELL FUNCTION
 int sh(int argc, char **argv, char **envp);
@@ -30,6 +31,7 @@ void alarmHandler(int);
 char *getExternalPath(char **commandList, struct pathelement *pathList);
 
 // BUILT IN COMMAND FUNCTIONS
+void watchUser(char **commandList);
 char *which(char *command, struct pathelement *pathList);
 char *where(char *command, struct pathelement *pathList);
 void list (char *dir);
@@ -56,4 +58,4 @@ void handleInvalidArguments(char *arg);
 #define PROMPTMAX 32
 #define MAXARGS 10
 #define BUFFERSIZE 512
-#define BUILT_IN_COMMAND_COUNT 11
+#define BUILT_IN_COMMAND_COUNT 12 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser"

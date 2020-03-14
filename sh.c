@@ -5,6 +5,7 @@
 char *prefix; // String that precedes prompt when using the prompt function
 char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
 int timeout = 0; // For ensuring processes are killed after the given time limit at argv[0]
+int isChildDone = 0; // For indicating whether or not a child process has finished
 int pid; // Variable for holding the pid of processes 
 
 //****************************************************************************************************************************
@@ -27,6 +28,7 @@ int sh(int argc, char **argv, char **envp) {
     char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths; // For holding the array of possible files produced by globs
+    pthread_t watchUserID;
 
     while (go) { // Main Loop For Shell 
         memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
@@ -154,7 +156,7 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int result, status = 0;
+    int result, status;
     int shouldRunInBg = shouldRunAsBackground(commandList);
     char *externalPath = getExternalPath(commandList, pathList);
     if (shouldRunInBg)
@@ -171,23 +173,24 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
         // Parent
         if (shouldRunInBg) { // If it SHOULD be run as a background process
             printShell();
-            result = waitpid(pid, &status, WNOHANG);
+        if ((result = waitpid(pid, &status, WNOHANG)) == -1 && errno != ECHILD) // ECHLD error not an error
+            perror("waitpid error");
         } else { // If it should NOT be run as a background process
             free(externalPath); // Free it
             signal(SIGALRM, alarmHandler); // Callback to update timeout global
-            signal(SIGCHLD, childHandler);
+            //signal(SIGCHLD, childHandler); // Callback to update isChildDone global
             alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
             pause(); // Stop everything until child dies
             if (timeout) {
-                result = waitpid(pid, &status, WNOHANG);
-                if (result == 0) {
+                if ((result = waitpid(pid, &status, WNOHANG)) == -1 && errno != ECHILD) { // Ignore no child process, not an error
+                    perror("waitpid error");
+                } else if (result == 0) {
                     printf("!!! taking too long to execute this command !!!\n"); 
                     kill(pid, SIGINT); // If child is still running after time limit, kill it. SIGTERM allows the process to exit normally.
-                } 
+                }
             }
-
         }
-        printf(" exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
+        printf("exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
     } 
 }
 
@@ -201,6 +204,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
  * Produces: Nothing
  */
 void childHandler(int signal) {
+    isChildDone = 1;
     while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {}
 }
 
@@ -265,7 +269,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
  * Produces: An integer
  */
 int isBuiltIn(char *command) {
-    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv"};
+    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser"};
     int inList = 0; // False
     for (int i = 0; i < BUILT_IN_COMMAND_COUNT; i++) {
         if (strcmp(command, builtInCommands[i]) == 0) { // strcmp returns 0 if true
@@ -314,6 +318,8 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
         printEnvironment(commandList, envp);
     } else if (strcmp(commandList[0], "setenv") == 0) {
         pathChanged = setEnvironment(commandList, envp, pathList);
+    } else if (strcmp(commandList[0], "watchuser") == 0) {
+        watchUser(commandList);
     }
     if (pathChanged)
         return pathChanged;
@@ -323,6 +329,17 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
 
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
+
+/**
+ * watchUser
+ * 
+ * Consumes: An array of strings
+ * Produces: Nothing
+ */
+void watchUser(char **commandList) {
+    printf("WATCHING\n");
+}
+
 
 /**
  * killIt, when given just a pid, sends SIGTERM to it to politely kill that process.
@@ -708,7 +725,6 @@ void whichHandler(char **commandList, struct pathelement *pathList) {
  */
 void whereHandler(char **commandList, struct pathelement *pathList) {
     char *paths;
-    int isNull = 1;
     for (int i = 1; commandList[i] != NULL; i++) {
         paths = where(commandList[i], pathList);
         if (paths != NULL)

@@ -5,6 +5,7 @@
 char *prefix; // String that precedes prompt when using the prompt function
 char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
 int timeout = 0; // For ensuring processes are killed after the given time limit at argv[0]
+int isChildDone = 0; // For indicating whether or not a child process has finished
 int pid; // Variable for holding the pid of processes 
 
 //****************************************************************************************************************************
@@ -27,6 +28,7 @@ int sh(int argc, char **argv, char **envp) {
     char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths; // For holding the array of possible files produced by globs
+    pthread_t watchUserID;
 
     while (go) { // Main Loop For Shell 
         memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
@@ -93,6 +95,58 @@ int sh(int argc, char **argv, char **envp) {
 
 
 /**
+ * shouldRunAsBackground, searches through the commandList array tokenized in the main loop and returns
+ *                        1 if the & (ampersand) character appears at the end of the array as an indicator
+ *                        that a process should be run in the background. 0 otherwise.
+ * 
+ *                        IMPORTANT: The return for this function acts as an index in which to remove the '&'
+ *                                   character, as well as to evaluate to true if non-zero.
+ * 
+ * Consumes: An array of strings
+ * Produces: An integer
+ */
+int shouldRunAsBackground(char **commandList) {
+    int shouldRun = 0;
+    for (int i = 0; commandList[i] != NULL; i++) 
+        if (!strcmp(commandList[i], "&") && commandList[i+1] == NULL) { // Make sure & is the last thing in commandList
+            shouldRun = i+1; // If it is return 1 (true)
+            break;
+        }
+    return shouldRun;
+}   
+
+
+/**
+ * runCommand, if the command given is a built-in runs the built-in, else it tries to find the
+ *             path for the external command called and runs that by calling the run external
+ *             function which uses fork annd exec. This function returns an integer based on 
+ *             the exit code if a built-in command was run. See the runBuiltIn function for its
+ *             exit codes. 
+ * 
+ * Consumes: Three arrays of strings, a string, a struct
+ * Produces: An integer
+ */
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd) {
+    int builtInExitCode = 0;
+    if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
+            /* check for each built in command and implement */
+                printf(" Executing built-in: %s\n", commandList[0]);
+                builtInExitCode = runBuiltIn(commandList, pathList, envp);             
+                if (builtInExitCode == 1) { // For exiting entire shell program
+                    freePath(pathList);
+                    free(prefix);
+                    free(cwd);
+                    exit(0); // Exit without error
+                }
+    } else {
+        // When this function is done all of its local variables pop off the stack so no need to memset
+        runExecutable(commandList, envp, pathList, argv); 
+    }
+    return builtInExitCode;
+}
+
+
+/**
  * runExecutable, if the file contains an absolute path then check if it is executable
 *                 and start a new process with fork and run it with exec. If it is not a
 *                 direct path, then find where the command is using the which function and
@@ -102,8 +156,11 @@ int sh(int argc, char **argv, char **envp) {
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int status = 0;
+    int result, status;
+    int shouldRunInBg = shouldRunAsBackground(commandList);
     char *externalPath = getExternalPath(commandList, pathList);
+    if (shouldRunInBg)
+        commandList[shouldRunInBg-1] = '\0'; // Get rid of the &, no need for it plus it causes problems
     if (externalPath != NULL) {
         printf("Executing: %s\n", externalPath);
         /* do fork(), execve() and waitpid() */
@@ -113,29 +170,42 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
             execve(externalPath, commandList, envp);
             perror("Problem executing: ");
         }
-        free(externalPath); // Free it
-        signal(SIGALRM, alarmHandler); // Callback to update timeout global
-        signal(SIGCHLD, childHandler);
-        alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
-        pause(); // Stop everything until child dies
-        if (timeout) { // Parent
-            int result = waitpid(pid, &status, WNOHANG);
-            if (result == 0) {
-                printf("!!! taking too long to execute this command !!!\n"); 
-                kill(pid, SIGINT); // If child is still running after time limit, kill it. SIGTERM allows the process to exit normally.
-            } 
-        } 
-        printf(" exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
+        // Parent
+        if (shouldRunInBg) { // If it SHOULD be run as a background process
+            printShell();
+        if ((result = waitpid(pid, &status, WNOHANG)) == -1 && errno != ECHILD) // ECHLD error not an error
+            perror("waitpid error");
+        } else { // If it should NOT be run as a background process
+            free(externalPath); // Free it
+            signal(SIGALRM, alarmHandler); // Callback to update timeout global
+            //signal(SIGCHLD, childHandler); // Callback to update isChildDone global
+            alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
+            pause(); // Stop everything until child dies
+            if (timeout) {
+                if ((result = waitpid(pid, &status, WNOHANG)) == -1 && errno != ECHILD) { // Ignore no child process, not an error
+                    perror("waitpid error");
+                } else if (result == 0) {
+                    printf("!!! taking too long to execute this command !!!\n"); 
+                    kill(pid, SIGINT); // If child is still running after time limit, kill it. SIGTERM allows the process to exit normally.
+                }
+            }
+        }
+        printf("exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
     } 
 }
 
 
 /**
- * childHandler, callback function for signal SIGCHLD, this function literally 
- *               does nothing except satisfy signals demand for a callback.
+ * childHandler, callback function for signal SIGCHLD, the reason waitpid uses WNOHANG is so that 
+ *               waitpid cannot block. The reason waitpid is in a loop is because if there are multiple
+ *               zombies, they all get reaped.
+ * 
+ * Consumes: An integer
+ * Produces: Nothing
  */
 void childHandler(int signal) {
-    return;
+    isChildDone = 1;
+    while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {}
 }
 
 
@@ -149,6 +219,7 @@ void childHandler(int signal) {
 void alarmHandler(int signal) {
     timeout = 1;
 }
+
 
 /**
  * getExternalPath, either returns the command if it is an absolute path ie. contains
@@ -171,7 +242,6 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
                 return NULL;
             }
             if (file.st_mode & S_IXUSR && file.st_mode & S_IXGRP && file.st_mode & S_IXOTH) { // Make sure it is executable by User, Group, Others
-                printf("HEY\n");
                 strcpy(temp, commandList[0]);
                 externalPath = (char *)malloc(sizeof(temp));
                 strcpy(externalPath, temp);
@@ -199,7 +269,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
  * Produces: An integer
  */
 int isBuiltIn(char *command) {
-    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv"};
+    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser"};
     int inList = 0; // False
     for (int i = 0; i < BUILT_IN_COMMAND_COUNT; i++) {
         if (strcmp(command, builtInCommands[i]) == 0) { // strcmp returns 0 if true
@@ -248,6 +318,8 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
         printEnvironment(commandList, envp);
     } else if (strcmp(commandList[0], "setenv") == 0) {
         pathChanged = setEnvironment(commandList, envp, pathList);
+    } else if (strcmp(commandList[0], "watchuser") == 0) {
+        watchUser(commandList);
     }
     if (pathChanged)
         return pathChanged;
@@ -257,6 +329,17 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
 
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
+
+/**
+ * watchUser
+ * 
+ * Consumes: An array of strings
+ * Produces: Nothing
+ */
+void watchUser(char **commandList) {
+    printf("WATCHING\n");
+}
+
 
 /**
  * killIt, when given just a pid, sends SIGTERM to it to politely kill that process.
@@ -642,7 +725,6 @@ void whichHandler(char **commandList, struct pathelement *pathList) {
  */
 void whereHandler(char **commandList, struct pathelement *pathList) {
     char *paths;
-    int isNull = 1;
     for (int i = 1; commandList[i] != NULL; i++) {
         paths = where(commandList[i], pathList);
         if (paths != NULL)
@@ -694,34 +776,4 @@ void handleInvalidArguments(char *arg) {
             exit(0); // Exit without error
         }
     }
-}
-
-
-/**
- * runCommand, if the command given is a built-in runs the built-in, else it tries to find the
- *             path for the external command called and runs that by calling the run external
- *             function which uses fork annd exec. This function returns an integer based on 
- *             the exit code if a built-in command was run. See the runBuiltIn function for its
- *             exit codes.
- * 
- * Consumes: Three arrays of strings, a string, a struct
- * Produces: An integer
- */
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd) {
-    int builtInExitCode = 0;
-    if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
-            /* check for each built in command and implement */
-                printf(" Executing built-in: %s\n", commandList[0]);
-                builtInExitCode = runBuiltIn(commandList, pathList, envp);             
-                if (builtInExitCode == 1) { // For exiting entire shell program
-                    freePath(pathList);
-                    free(prefix);
-                    free(cwd);
-                    exit(0); // Exit without error
-                }
-    } else {
-        // When this function is done all of its local variables pop off the stack so no need to memset
-        runExecutable(commandList, envp, pathList, argv); 
-    }
-    return builtInExitCode;
 }

@@ -2,9 +2,34 @@
 
 int main( int argc, char **argv, char **envp ) {
   /* put signal set up stuff here */
+  signal(SIGCHLD, childHandler);
   sigignore(SIGTSTP);
   sigignore(SIGTERM);
   signal(SIGINT, sigHandler);
+
+
+  /* // LINKED LIST TEST --> IT WORKS DELETE THIS LATER
+  head = NULL;
+  addUser("will");
+  addUser("sam");
+  addUser("jimmy");
+  addUser("Holly"); 
+  removeUser("will");
+  struct user *n = head;
+
+  while (n) {
+    printf("NAME: %s\n", n->username);
+    n = n->next;
+  }
+
+  struct user *will = findUser("jimmy");
+  if (will != NULL)
+    printf("FOUND: %s\n", will->username);
+  else
+    printf("NO SUCH USER\n");
+  
+  freeUsers(head);
+  */
   return sh(argc, argv, envp);
 }
 

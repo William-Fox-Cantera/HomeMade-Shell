@@ -1,16 +1,15 @@
 # choose your compiler
-CC=gcc
-#CC=gcc -Wall
+#CC=gcc
+CC=gcc -Wall
 
-mysh: sh.o get_path.o main.c 
-	$(CC) -w -g main.c sh.o get_path.o -o mysh
-#	$(CC) -g main.c sh.o get_path.o bash_getcwd.o -o mysh
+mysh: sh.o lists.o main.c 
+	$(CC) -g main.c sh.o lists.o -o mysh
 
 sh.o: sh.c sh.h
-	$(CC) -w -g -c sh.c
+	$(CC) -g -c sh.c
 
-get_path.o: get_path.c get_path.h
-	$(CC) -g -c get_path.c
+lists.o: lists.c lists.h 
+	$(CC) -g -c lists.c
 
 clean:
-	rm -rf sh.o get_path.o mysh
+	rm -rf sh.o getPath.o lists.o mysh

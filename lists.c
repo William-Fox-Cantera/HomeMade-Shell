@@ -93,13 +93,14 @@ struct user *removeUser(char *usernameToRemove) {
     while (temp) {
         if (strcmp(usernameToRemove, temp->username) == 0) {
             *tracker = temp->next;
+            free(temp->username); // Clean up strdup
             free(temp);
             return *tracker;
         }
         tracker = &(*tracker)->next;
         temp = temp->next;
     }
-    return NULL; // If the node to delete didn't exist
+    return NULL; // If the user to delete does not exist
 }
 
 
@@ -114,12 +115,19 @@ void freeUsers(struct user *list) {
     while(list) {
         temp = list;
         list = list->next;
+        free(temp->username);
         free(temp);
     }
 }
 
 
-void printList() {
+/**
+ * printMail, prints the list of users in the linked list.
+ * 
+ * Consumes: Nothing
+ * Produces: Nothing
+ */
+void printUsers() {
     struct user *n = userHead;
     while (n) {
         printf("\nNAME: %s\n", n->username);
@@ -178,6 +186,7 @@ struct mail *removeMail(char *fileName) {
     while(temp) {
         if (strcmp(temp->pathToFile, fileName) == 0) {
             *tracker = temp->next;
+            free(temp->pathToFile);
             free(temp);
             return *tracker;
         }
@@ -189,16 +198,33 @@ struct mail *removeMail(char *fileName) {
 
 
 /**
- * freeMail, frees all the threads and or structs in the mailList.
+ * findMail, finds the piece of mail based on the string entered as the filename (or path). 
+ *           It then returns the mail struct associated with that filename.
+ * 
+ * Consumes: A string
+ * Produces: Nothing
+ */
+struct mail *findMail(char *fileName) {
+    struct mail **tracker = &mailHead;
+    while(*tracker) 
+        if (strcmp((*(tracker))->pathToFile, fileName) == 0)
+            return *tracker;
+    return NULL; // If the mail wasn't found
+}
+
+
+/**
+ * freeAllMail, frees all the threads and or structs in the mailList.
  * 
  * Consumes: A struct
  * Produces: Nothing
  */
-void freeMail(struct mail *list) {
+void freeAllMail(struct mail *list) {
     struct mail *temp;
     while(list) {
         temp = list;
         list = list->next;
+        free(temp->pathToFile);
         pthread_cancel(temp->thread);
         pthread_join(temp->thread, NULL);
         free(temp);

@@ -37,14 +37,14 @@ int hasNoClobber = 0; // Either 0 or 1 for turning the "noclobber" option on or 
  */
 int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
-    int csource, argCount, go = 1, builtInExitCode = 0; // integers
-    char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *myCwd = "", *cwd, *token; // For printing to the terminal
+    int csource, go = 1, builtInExitCode = 0; // integers
+    char buffer[BUFFERSIZE], **commandList, *myCwd = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths; // For holding the array of possible files produced by globs
+    commandList = calloc(50, sizeof(char *));
 
     while (go) { // Main Loop For Shell 
-        memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
-        argCount = 0; // For freeing paths put into memory dynamically by glob(3)
+        //memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
         if (strcmp(myCwd, cwd = getcwd(NULL, 0)) != 0) { // Keep track of the previous and current working directories 
             if (strcmp(myCwd, "")) {
                 strcpy(previousWorkingDirectory, myCwd);
@@ -68,34 +68,48 @@ int sh(int argc, char **argv, char **envp) {
     
         // Main Argumment Parser
         token = strtok (buffer, " ");                       // HOW GLOBBING IS IMPLEMENTED: I used strstr() to check to see if a * or ? character appear
-        for (int i = 0; token != NULL; i++) {                                   //          in the buffer from fgets(). I then used glob(3) to expand the 
+        for (int i = 0; token != NULL;) {                                       //          in the buffer from fgets(). I then used glob(3) to expand the 
             if ((strstr(token, "*") != NULL) || (strstr(token, "?") != NULL)) { //          possible paths if there are any. If there are no paths, an error
                 csource = glob(token, 0, NULL, &paths);                         //          message is printed and the normal command is called without any	   
                 if (csource == 0) {                                             //          paths such as ls -l. If there were paths, the number of them is
                     for (char **p = paths.gl_pathv; *p != NULL; p++) {          //          saved in an int variable and the expanded list provided by glob
-                        commandList[i] = (char *)malloc(strlen(*p)+1);          //          is passed off to execve() as an argv array. The glob list is freed
+                        commandList[i] = (char *)malloc((int)strlen(*p)+1);     //          is passed off to execve() as an argv array. The glob list is freed
                         strcpy(commandList[i], *p);                             //          at the end of this while loop using the counter mentioned previously.
                         i++;
                     }
                     globfree(&paths);
                 } else { // If no glob pattern was found
                     errno = ENOENT;
-                    perror("glob: \n");
-                    break;
+                    perror("glob");
                 }
             } else {
-                argCount++;
-                commandList[i] = token;
+                commandList[i] = (char *)malloc((int)strlen(token)+1);
+                strcpy(commandList[i], token);
+                i++;
             }
             token = strtok(NULL, " "); // Tokenize by spaces
         }
-        builtInExitCode = runCommand(commandList, pathList, argv, envp, myCwd);
+        builtInExitCode = runCommand(commandList, pathList, argv, envp);
+        if (builtInExitCode == 1)
+            go = 0;
         if (builtInExitCode == 2) { // See runBuiltIn for exit codes
             freePath(pathList);
-            pathList = get_path(); } // Update the path linked list if it was changed with setenv
-            for (int i = argCount; commandList[i] != NULL; i++) // Globbing requires memory allocation, free it
-                free(commandList[i]);
+            pathList = get_path(); 
+        } // Update the path linked list if it was changed with setenv
+        for (int i = 0; commandList[i] != NULL; i++) { // Globbing requires memory allocation, free it
+            free(commandList[i]);
+            commandList[i] = NULL;
+        }
     }
+    freePath(pathList);
+    free(prefix);
+    free(myCwd);
+    freeUsers(userHead);
+    pthread_cancel(watchUserID);
+    pthread_join(watchUserID, NULL);
+    freeAllMail(mailHead);
+    free(commandList);
+    exit(0); // Exit without error
     return 0;
 } /* sh() */
 
@@ -140,22 +154,12 @@ int shouldRunAsBackground(char **commandList) {
  * Consumes: Three arrays of strings, a string, a struct
  * Produces: An integer
  */
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd) {
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp) {
     int builtInExitCode = 0;
     if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
                 /* check for each built in command and implement */
                 printf(" Executing built-in: %s\n", commandList[0]);
                 builtInExitCode = runBuiltIn(commandList, pathList, envp);             
-                if (builtInExitCode == 1) { // For exiting entire shell program
-                    freePath(pathList);
-                    free(prefix);
-                    free(cwd);
-                    freeUsers(userHead);
-                    pthread_cancel(watchUserID);
-                    pthread_join(watchUserID, NULL);
-                    freeAllMail(mailHead);
-                    exit(0); // Exit without error
-                }
     } else {
         // When this function is done all of its local variables pop off the stack so no need to memset
         runExecutable(commandList, envp, pathList, argv); 
@@ -174,7 +178,7 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int result, status, redirectionType = getRedirectionType(commandList);
+    int result, status = 0, redirectionType = getRedirectionType(commandList);
     int shouldRunInBg = shouldRunAsBackground(commandList);
     char *externalPath = getExternalPath(commandList, pathList);
     if (shouldRunInBg)
@@ -186,8 +190,8 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
             perror("fork error");
         } else if (pid == 0) {
             if (redirectionType) { // If redirection was detected, not 0
-                char *fileDest = getRedirectionDest(commandList);
-                handleRedirection(redirectionType, fileDest);
+                handleRedirection(redirectionType, getRedirectionDest(commandList)); // This is where the redirection magic happens
+                removeAfterRedirect(commandList); // Get rid of the redirection symbol and the arguments that come after it
             }
             execve(externalPath, commandList, envp);
             perror("Problem executing: ");
@@ -418,7 +422,7 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
         watchUser(commandList);
     } else if (strcmp(commandList[0], "watchmail") == 0) {
         watchMail(commandList);
-    } else if (strcmp(commandList[0], "noClobber") == 0) {
+    } else if (strcmp(commandList[0], "noclobber") == 0) {
         noClobber();
     }
     if (pathChanged)
@@ -481,6 +485,20 @@ char *getRedirectionDest(char **commandList) {
 }
 
 
+void removeAfterRedirect(char **commandList) {
+    int commandCount = 0;
+    while(1) {
+        if (strstr(commandList[commandCount], "<") || strstr(commandList[commandCount], ">"))
+            break;
+        commandCount++;
+    }
+    while (commandList[commandCount] != NULL) {
+        commandList[commandCount] = NULL;
+        commandCount++;
+    }
+}
+
+
 /**
  * handleRedirection, please refer to the documentation above the getRedirectionType function to know more about what the redirection
  *                    parameter is.
@@ -490,13 +508,14 @@ char *getRedirectionDest(char **commandList) {
  */
 void handleRedirection(int redirectionType, char *destFile) {
     int fileDescriptor;
+    int wrx = 0666;
     if (!redirectionType) // If redirection type is 0, no redirection detected.
         return;
     if (redirectionType == 1) {        // For ">"
         if (hasNoClobber) 
             printf("noclobber is currently on, cannot overwrite, aborting...\n");
         else {
-            fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_TRUNC);
+            fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_TRUNC, wrx); // Give all permissions except execute
             close(1); // Close standard out
             dup(fileDescriptor);
             close(fileDescriptor);

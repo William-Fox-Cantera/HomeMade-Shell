@@ -32,7 +32,7 @@ int sh(int argc, char **argv, char **envp);
 
 // HELPER FUNCTIONS
 int shouldRunAsBackground(char **commandList);
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 void *watchUserCallback(void *arg);
 int isBuiltIn(char *command); 
@@ -46,6 +46,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList);
 // PIPES AND REDIRECTION
 int getRedirectionType(char **commandList);
 char *getRedirectionDest(char **commandList);
+void removeAfterRedirect(char **commandList);
 void handleRedirection(int redirectionType, char *destFile);
 
 // BUILT IN COMMAND FUNCTIONS

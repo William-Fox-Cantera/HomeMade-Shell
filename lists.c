@@ -93,13 +93,14 @@ struct user *removeUser(char *usernameToRemove) {
     while (temp) {
         if (strcmp(usernameToRemove, temp->username) == 0) {
             *tracker = temp->next;
+            free(temp->username); // Clean up strdup
             free(temp);
             return *tracker;
         }
         tracker = &(*tracker)->next;
         temp = temp->next;
     }
-    return NULL; // If the node to delete didn't exist
+    return NULL; // If the user to delete does not exist
 }
 
 

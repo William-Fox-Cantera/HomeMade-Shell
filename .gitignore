@@ -1,5 +1,5 @@
 .vscode
 a.out
 mysh
-get_path.o
 sh.o
+lists.o

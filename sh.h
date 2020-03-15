@@ -14,10 +14,21 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <fcntl.h>
 #include "lists.h"
+
+
+// CONSTANTS
+#define PROMPTMAX 32
+#define MAXARGS 10
+#define BUFFERSIZE 512
+#define BUILT_IN_COMMAND_COUNT 14 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", 
+                                  // "prompt", "printenv", "setenv", "watchuser", "watchmail", "noClobber"
+
 
 // MAIN SHELL FUNCTION
 int sh(int argc, char **argv, char **envp);
+
 
 // HELPER FUNCTIONS
 int shouldRunAsBackground(char **commandList);
@@ -31,7 +42,14 @@ void childHandler(int signal);
 void alarmHandler(int);
 char *getExternalPath(char **commandList, struct pathelement *pathList);
 
+
+// PIPES AND REDIRECTION
+int getRedirectionType(char **commandList);
+char *getRedirectionDest(char **commandList);
+void handleRedirection(int redirectionType, char *destFile);
+
 // BUILT IN COMMAND FUNCTIONS
+void noClobber();
 void watchMail(char **commandList);
 void watchUser(char **commandList);
 char *which(char *command, struct pathelement *pathList);
@@ -47,6 +65,7 @@ void printEnvironment(char **commandList, char **envp);
 int setEnvironment(char **commandList, char **envp, struct pathelement *pathList);
 void killIt(char **commandList);
 
+
 // CONVIENIENCE FUNCTIONS
 void printShell();
 void listHandler(char **commandList);
@@ -55,9 +74,3 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
-
-// CONSTANTS
-#define PROMPTMAX 32
-#define MAXARGS 10
-#define BUFFERSIZE 512
-#define BUILT_IN_COMMAND_COUNT 13 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser", "watchmail"

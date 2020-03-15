@@ -1,7 +1,10 @@
 #include "sh.h"
 
-//****************************************************************************************************************************
+
+//*****************************************************************************************************************************
 // GLOBALS
+
+
 char *prefix; // String that precedes prompt when using the prompt function
 char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
 int timeout = 0; // For ensuring processes are killed after the given time limit at argv[0]
@@ -10,8 +13,15 @@ int pid; // Variable for holding the pid of processes
 int threadExists = 0; // For indicating if the pthread for watchusers exists, only want to create one
 pthread_t watchUserID; // Thread for watchusers, this should be the only running thread for watchusers
 pthread_mutex_t mutexLock; // For locking mutually exclusive objects in the user list becuase there is only one thread all users must share
+int hasNoClobber = 0; // Either 0 or 1 for turning the "noclobber" option on or off
 
-//****************************************************************************************************************************
+
+// END GLOBALS
+//*****************************************************************************************************************************
+
+
+//*****************************************************************************************************************************
+// MAIN LOOP FOR SHELL
 
 
 /**
@@ -90,10 +100,12 @@ int sh(int argc, char **argv, char **envp) {
 } /* sh() */
 
 
+// END MAIN LOOP FOR SHELL
+//*****************************************************************************************************************************
 
 
+//*****************************************************************************************************************************
 // HELPER FUNCTIONS
-//***************************************************************************************************************
 
 
 /**
@@ -131,7 +143,7 @@ int shouldRunAsBackground(char **commandList) {
 int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd) {
     int builtInExitCode = 0;
     if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
-            /* check for each built in command and implement */
+                /* check for each built in command and implement */
                 printf(" Executing built-in: %s\n", commandList[0]);
                 builtInExitCode = runBuiltIn(commandList, pathList, envp);             
                 if (builtInExitCode == 1) { // For exiting entire shell program
@@ -162,7 +174,7 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int result, status;
+    int result, status, redirectionType = getRedirectionType(commandList);
     int shouldRunInBg = shouldRunAsBackground(commandList);
     char *externalPath = getExternalPath(commandList, pathList);
     if (shouldRunInBg)
@@ -173,6 +185,10 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
         if ((pid = fork()) < 0) { // Child
             perror("fork error");
         } else if (pid == 0) {
+            if (redirectionType) { // If redirection was detected, not 0
+                char *fileDest = getRedirectionDest(commandList);
+                handleRedirection(redirectionType, fileDest);
+            }
             execve(externalPath, commandList, envp);
             perror("Problem executing: ");
         }
@@ -342,14 +358,14 @@ void *watchUserCallback(void *callbackArgs) {
 
 
 /**
- * isBuiltIn, determines whether the command given is apart of the built in 
- *            commands list. Returns 1 if true, 0 otherwise.
+ * isBuiltIn, determines whether the command given is apart of the built in commands list. Returns 1 if true, 0 otherwise.
  * 
  * Consumes: A string
  * Produces: An integer
  */
 int isBuiltIn(char *command) {
-    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser", "watchmail"};
+    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", 
+                                     "printenv", "setenv", "watchuser", "watchmail", "noclobber"};
     int inList = 0; // False
     for (int i = 0; i < BUILT_IN_COMMAND_COUNT; i++) {
         if (strcmp(command, builtInCommands[i]) == 0) { // strcmp returns 0 if true
@@ -402,6 +418,8 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
         watchUser(commandList);
     } else if (strcmp(commandList[0], "watchmail") == 0) {
         watchMail(commandList);
+    } else if (strcmp(commandList[0], "noClobber") == 0) {
+        noClobber();
     }
     if (pathChanged)
         return pathChanged;
@@ -409,8 +427,119 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
 }
 
 
+// END HELPER FUNCTIONS
+//*****************************************************************************************************************************
+
+
+//*****************************************************************************************************************************
+// PIPES AND REDIRECTION
+
+
+/**
+ * getRedirectionType, traverses the commandList array and searches for a redirection type. If found it will return one of ">",
+ *                     ">&", ">", ">>&", ">". If none of these are found, NULL will be returned.
+ * 
+ *                     IMPORTANT: This function returns 1 of 6 integers 0-5
+ *                                -0: No redirection found
+ *                                -1: ">"   found
+ *                                -2: ">>"  found
+ *                                -3: "<"   found 
+ *                                -4: ">>&" found
+ *                                -5: ">&"  found
+ * 
+ * Consumes: An array of strings
+ * Produces: An integer
+ */
+int getRedirectionType(char **commandList) {
+    int redirectionType = 0;
+    for (int i = 0; commandList[i] != NULL; i++) {
+        if (!strcmp(commandList[i], ">")) 
+            redirectionType = 1;
+        if (!strcmp(commandList[i], ">>"))
+            redirectionType = 2;
+        if (!strcmp(commandList[i], "<"))
+            redirectionType = 3;
+        if (!strcmp(commandList[i], ">>&"))
+            redirectionType = 4;
+        if (!strcmp(commandList[i], ">&"))
+            redirectionType = 5;
+    }
+    return redirectionType;
+}
+
+
+char *getRedirectionDest(char **commandList) {
+    char *redirectionDest;
+    for (int i = 0; commandList[i] != NULL; i++)
+        if (strstr(commandList[i], "<") || strstr(commandList[i], ">"))
+            if (commandList[i+1] != NULL) {
+                redirectionDest = (char *)malloc(strlen(commandList[i+1]));
+                strcpy(redirectionDest, commandList[i+1]);
+                return redirectionDest;
+            }
+    return NULL;
+}
+
+
+/**
+ * handleRedirection, please refer to the documentation above the getRedirectionType function to know more about what the redirection
+ *                    parameter is.
+ * 
+ * Consumes: An integer
+ * Produces: Nothing
+ */
+void handleRedirection(int redirectionType, char *destFile) {
+    int fileDescriptor;
+    if (!redirectionType) // If redirection type is 0, no redirection detected.
+        return;
+    if (redirectionType == 1) {        // For ">"
+        if (hasNoClobber) 
+            printf("noclobber is currently on, cannot overwrite, aborting...\n");
+        else {
+            fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_TRUNC);
+            close(1); // Close standard out
+            dup(fileDescriptor);
+            close(fileDescriptor);
+        }
+    } else if (redirectionType == 2) { // For ">>"
+        printf("Found >>\n");
+    } else if (redirectionType == 3) { // For "<"
+        printf("Found <\n");
+    } else if (redirectionType == 4) { // For ">>&"
+        printf("Found >>&\n");
+    } else if (redirectionType == 5) { // For ">&"
+        printf("Found >&\n");
+    }
+    free(destFile);
+}
+
+
+// END PIPES AND REDIRECTION
+//*****************************************************************************************************************************
+
+
 // BUILT IN COMMAND FUNCTIONS
-//*******************************************************************************************************************
+//*****************************************************************************************************************************
+
+
+/**
+ * noClobber, for managing the hasNoClobber global variable. When noclobber is entered as a command, the hasNoClobber global will
+ *            be updated to turn it on or off. It is off(0) by default, so typing noclobber would turnit on, typing it again would
+ *            turn it off.
+ * 
+ * Consumes: Nothing
+ * Produces: Nothing
+ */
+void noClobber() {
+    if (hasNoClobber == 0) { // On
+        hasNoClobber = 1;
+        printf("noclobber is now on\n");
+    }
+    else {                   // Off
+        hasNoClobber = 0;
+        printf("noclobber is now off\n");
+    }
+}
 
 
 /**
@@ -815,14 +944,17 @@ void list (char *dir) {
           printf("    %s\n", dirp->d_name);
       }
       closedir(dp); // Close the directory opened
-  }
+   }
+} 
 
 
-} /* list() */
+// END BUILT-IN COMMAND FUNCTIONS
+//*****************************************************************************************************************************
 
 
+//*****************************************************************************************************************************
 // CONVIENIENCE FUNCTIONS
-//*******************************************************************************************************
+
 
 /**
  * printShell, prints the cwd in the form [path]>
@@ -936,3 +1068,7 @@ void handleInvalidArguments(char *arg) {
         }
     }
 }
+
+
+// END CONVIENIENCE FUNCTIONS
+//*****************************************************************************************************************************

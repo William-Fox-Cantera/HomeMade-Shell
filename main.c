@@ -9,7 +9,6 @@ int main( int argc, char **argv, char **envp ) {
 
 
   /* // LINKED LIST TEST --> IT WORKS DELETE THIS LATER
-  head = NULL;
   addUser("will");
   addUser("sam");
   addUser("jimmy");
@@ -17,10 +16,7 @@ int main( int argc, char **argv, char **envp ) {
   removeUser("will");
   struct user *n = head;
 
-  while (n) {
-    printf("NAME: %s\n", n->username);
-    n = n->next;
-  }
+  printList();
 
   struct user *will = findUser("jimmy");
   if (will != NULL)

@@ -41,7 +41,7 @@ struct user *addUser(char *username);
 struct user *findUser(char *username);
 struct user *removeUser(char *usernameToRemove);
 void freeUsers(struct user *list);
-void printList();
+void printUsers();
 
 // End watchUser definitions
 //**************************************************************************************************
@@ -59,4 +59,5 @@ struct mail {
 struct mail *addMail(char *pathToFile, pthread_t threadID);
 void printMail();
 struct mail *removeMail(char *fileName);
-void freeMail(struct mail *list);
+void freeAllMail(struct mail *list);
+struct mail *findMail(char *fileName);

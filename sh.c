@@ -141,7 +141,7 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
                     freeUsers(userHead);
                     pthread_cancel(watchUserID);
                     pthread_join(watchUserID, NULL);
-                    freeMail(mailHead);
+                    freeAllMail(mailHead);
                     exit(0); // Exit without error
                 }
     } else {
@@ -404,18 +404,27 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
 
 
 /**
- * watchMail, 
+ * watchMail, if no arguments
  * 
  * Consumes: An array of strings
  * Produces: Nothing
  */
 void watchMail(char **commandList) {
+    char *fileName = strdup(commandList[1]);
     if (commandList[1] == NULL) { //  Case where no arguments are given
         errno = ENOENT;
         perror("watchmail");
     } else if (commandList[2] != NULL) { // Case where user enters "off" to stop watching mail
         if (strcmp("off", commandList[2]) == 0) {
-            removeMail(commandList[1]); // Remove from linked list
+            struct mail *toRemove = findMail(commandList[1]);
+            free(fileName); // Free the strdup
+            if (toRemove == NULL) { // If user tries to use the off option on mail not in the watchlist
+                printf("Cannot unwatch %s, not in mail list.\n", commandList[1]);
+                return;
+            }
+            pthread_cancel(toRemove->thread);
+            pthread_join(toRemove->thread, NULL);
+            removeMail(toRemove->pathToFile); // Remove from linked list
         } else {
             errno = EINVAL;
             perror("watchmail");
@@ -429,7 +438,6 @@ void watchMail(char **commandList) {
             perror("stat");
             return;
         }
-        char *fileName = strdup(commandList[1]);
         pthread_create(&mailID, NULL, watchMailCallback, (void *)fileName);
         addMail(fileName, mailID); // Must use strdup to copy the string in order for it to remain properly in memory.
     }                              // Of course, this means more frees to deal with later

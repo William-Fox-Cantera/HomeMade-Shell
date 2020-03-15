@@ -7,6 +7,9 @@ char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous 
 int timeout = 0; // For ensuring processes are killed after the given time limit at argv[0]
 int isChildDone = 0; // For indicating whether or not a child process has finished
 int pid; // Variable for holding the pid of processes 
+int threadExists = 0; // For indicating if the pthread for watchusers exists, only want to create one
+pthread_t watchUserID; // Thread for watchusers, this should be the only running thread for watchusers
+pthread_mutex_t mutexLock;
 
 //****************************************************************************************************************************
 
@@ -25,26 +28,25 @@ int pid; // Variable for holding the pid of processes
 int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
     int csource, argCount, go = 1, builtInExitCode = 0; // integers
-    char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *currentWorkingDirectory = "", *cwd, *token; // For printing to the terminal
+    char buffer[BUFFERSIZE], *commandList[BUFFERSIZE], *myCwd = "", *cwd, *token; // For printing to the terminal
     struct pathelement *pathList = get_path(); // Put PATH into a linked list 
     glob_t paths; // For holding the array of possible files produced by globs
-    pthread_t watchUserID;
 
     while (go) { // Main Loop For Shell 
         memset(commandList, 0, sizeof(commandList)); // Shut valgrind up
         argCount = 0; // For continuing the loop of no globbing pattern was matched
-        if (strcmp(currentWorkingDirectory, cwd = getcwd(NULL, 0)) != 0) { // Keep track of the previous and current working directories 
-            if (strcmp(currentWorkingDirectory, "")) {
-                strcpy(previousWorkingDirectory, currentWorkingDirectory);
-                free(currentWorkingDirectory);
+        if (strcmp(myCwd, cwd = getcwd(NULL, 0)) != 0) { // Keep track of the previous and current working directories 
+            if (strcmp(myCwd, "")) {
+                strcpy(previousWorkingDirectory, myCwd);
+                free(myCwd);
             }
-            currentWorkingDirectory = getcwd(NULL, 0);
+            myCwd = getcwd(NULL, 0);
         }
         free(cwd); // getcwd() system call will dynamically allocate memory
 
         /* print your prompt */
         printShell();
-
+    
         /* get command line and process */
         if (fgets(buffer, BUFFERSIZE, stdin) == NULL) { // Ignore ctrl+d a.k.a. EOF
             printf("^D\nUse \"exit\" to leave shell.\n");
@@ -77,7 +79,7 @@ int sh(int argc, char **argv, char **envp) {
             }
             token = strtok(NULL, " "); // Tokenize by spaces
         }
-        builtInExitCode = runCommand(commandList, pathList, argv, envp, currentWorkingDirectory);
+        builtInExitCode = runCommand(commandList, pathList, argv, envp, myCwd);
         if (builtInExitCode == 2) { // See runBuiltIn for exit codes
             freePath(pathList);
             pathList = get_path(); } // Update the path linked list if it was changed with setenv
@@ -109,7 +111,7 @@ int shouldRunAsBackground(char **commandList) {
     int shouldRun = 0;
     for (int i = 0; commandList[i] != NULL; i++) 
         if (!strcmp(commandList[i], "&") && commandList[i+1] == NULL) { // Make sure & is the last thing in commandList
-            shouldRun = i+1; // If it is return 1 (true)
+            shouldRun = i; // If it is return 1 (true)
             break;
         }
     return shouldRun;
@@ -136,6 +138,11 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
                     freePath(pathList);
                     free(prefix);
                     free(cwd);
+                    for (struct user *temp = userHead; temp != NULL; temp = temp->next)
+                        free(temp->username); // For freeing the memory allocated by strdup in the watchUser function
+                    freeUsers(userHead);
+                    pthread_cancel(watchUserID);
+                    pthread_join(watchUserID, NULL);
                     exit(0); // Exit without error
                 }
     } else {
@@ -160,7 +167,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
     int shouldRunInBg = shouldRunAsBackground(commandList);
     char *externalPath = getExternalPath(commandList, pathList);
     if (shouldRunInBg)
-        commandList[shouldRunInBg-1] = '\0'; // Get rid of the &, no need for it plus it causes problems
+        commandList[shouldRunInBg] = '\0'; // Get rid of the &, no need for it plus it causes problems
     if (externalPath != NULL) {
         printf("Executing: %s\n", externalPath);
         /* do fork(), execve() and waitpid() */
@@ -262,6 +269,64 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
 
 
 /**
+ * watchMailThread, 
+ * 
+ * Consumes:
+ * Produces:
+ */
+void *watchMailThread(void *callbackArgs) {
+    char *fileName = (char *)callbackArgs;
+    struct stat st;
+    stat(fileName, &st);
+    int prevFileSize = st.st_size;
+    struct timeval tv;
+    time_t currentTime;
+    printf("MADEIT\n");
+    while(1) {
+        if (gettimeofday(&tv, NULL) != 0) // Timezone does not matter
+            perror("Get current time problem"); // If getting thhe current time failed
+        currentTime = tv.tv_sec; // Update the timeval struct
+        if (st.st_size > prevFileSize) { // Print a notification saying you've got mail if the file size increased
+            printf("\a\nBEEP! You've Got Mail in %s at %ld", fileName, currentTime);
+            prevFileSize = st.st_size; // Update previous time
+        }
+        sleep(1); // Wait for 1 second in between possible mail notifications
+    }
+}
+
+
+
+/**
+ * watchUserThread, loops infinitely on a sleep timer of 20 seconds. Finds the user on the machine and tracks their logins.
+ *                  The data shared the global users linked list is protected by a mutex_lock and unlock.
+ * 
+ * Consumes: Nothing
+ * Produces: Nothing
+ */
+void *watchUserThread(void *arg) {
+    struct utmpx *up;
+    while(1) {
+        setutxent(); // Start at beginning
+        while((up = getutxent())) { // Get an entry
+            if (up->ut_type == USER_PROCESS) { // Only care about users
+                pthread_mutex_lock(&mutexLock);
+                struct user *someUser = findUser(up->ut_user);
+                if (someUser != NULL) { // If user exists
+                    if (someUser->isLoggedOn == 0) {
+                        someUser->isLoggedOn = 1;
+                        printf("%s has logged on %s from %s\n", up->ut_user, up->ut_line, up->ut_host);
+                    }
+                }
+                pthread_mutex_unlock(&mutexLock);
+            }
+        }
+        sleep(20);
+    }
+    return NULL;
+}
+
+
+/**
  * isBuiltIn, determines whether the command given is apart of the built in 
  *            commands list. Returns 1 if true, 0 otherwise.
  * 
@@ -269,7 +334,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
  * Produces: An integer
  */
 int isBuiltIn(char *command) {
-    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser"};
+    const char *builtInCommands[] = {"exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser", "watchmail"};
     int inList = 0; // False
     for (int i = 0; i < BUILT_IN_COMMAND_COUNT; i++) {
         if (strcmp(command, builtInCommands[i]) == 0) { // strcmp returns 0 if true
@@ -320,6 +385,8 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
         pathChanged = setEnvironment(commandList, envp, pathList);
     } else if (strcmp(commandList[0], "watchuser") == 0) {
         watchUser(commandList);
+    } else if (strcmp(commandList[0], "watchmail") == 0) {
+        watchMail(commandList);
     }
     if (pathChanged)
         return pathChanged;
@@ -330,14 +397,69 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
 // BUILT IN COMMAND FUNCTIONS
 //*******************************************************************************************************************
 
+
 /**
- * watchUser
+ * watchMail, 
+ * 
+ * Consumes: An array of strings
+ * Produces: Nothing
+ */
+void watchMail(char **commandList) {
+    if (commandList[1] == NULL) { //  Case where no arguments are given
+        errno = ENOENT;
+        perror("watchmail");
+    } else if (commandList[2] != NULL) { // Case where user enters "off" to stop watching mail
+        if (strcmp("off", commandList[2]) == 0) {
+            removeMail(commandList[1]); // Remove from linked list
+        } else {
+            errno = EINVAL;
+            perror("watchmail");
+        }
+    } else { // Case where one argument was entered to watch certain mail. 
+        struct stat buffer;
+        pthread_t mailID;
+        int fileExists;
+        if ((fileExists = stat(commandList[1], &buffer)) != 0) {
+            errno = ENOENT;
+            perror("stat");
+            return;
+        }
+        pthread_create(&mailID, NULL, watchMailThread, (void *)commandList[1]);
+        addMail(strdup(commandList[1]), mailID); // Must use strdup to copy the string in order for it to remain properly in memory.
+    }                                            // Of course, this means more frees to deal with later
+ }
+
+
+/**
+ * watchUser, if no argumemnts are given, print an error message. If one argument is given, add the user given as 
+ *            the argument to the global users list. There is an optional second argument for untracking a user. 
+ *            by typing: watchuser USER off, that user will be removed from the user list.
  * 
  * Consumes: An array of strings
  * Produces: Nothing
  */
 void watchUser(char **commandList) {
-    printf("WATCHING\n");
+    if (commandList[1] == NULL) { // Case where no argument is given
+        errno = EINVAL;
+        printf("Enter a username to track: %s\n", strerror(errno));
+    } else if (commandList[2] != NULL) { // Case where two arguments, (username, off) are given
+        if (strcmp("off", commandList[2]) == 0) {
+            removeUser(commandList[1]);
+        } else {
+            errno = EINVAL;
+            perror("watchuser");
+        }
+    } else { // Case where one argument is given (username) to track
+        pthread_mutex_lock(&mutexLock);
+        addUser(strdup(commandList[1]));
+        pthread_mutex_unlock(&mutexLock);
+        if (!threadExists) {
+            threadExists = 1;
+            if (pthread_create(&watchUserID, NULL, watchUserThread, NULL) != 0) {
+                perror("pthread_create problem");
+            }
+        }
+    }
 }
 
 

@@ -23,6 +23,7 @@ int sh(int argc, char **argv, char **envp);
 int shouldRunAsBackground(char **commandList);
 int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
+void *watchUserThread(void *arg);
 int isBuiltIn(char *command); 
 int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 void sigHandler(int signal);
@@ -31,6 +32,7 @@ void alarmHandler(int);
 char *getExternalPath(char **commandList, struct pathelement *pathList);
 
 // BUILT IN COMMAND FUNCTIONS
+void watchMail(char **commandList);
 void watchUser(char **commandList);
 char *which(char *command, struct pathelement *pathList);
 char *where(char *command, struct pathelement *pathList);
@@ -58,4 +60,4 @@ void handleInvalidArguments(char *arg);
 #define PROMPTMAX 32
 #define MAXARGS 10
 #define BUFFERSIZE 512
-#define BUILT_IN_COMMAND_COUNT 12 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser"
+#define BUILT_IN_COMMAND_COUNT 13 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser", "watchmail"

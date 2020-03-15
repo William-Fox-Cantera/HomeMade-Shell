@@ -54,7 +54,7 @@ struct pathelement *get_path()
  * Produces: A struct
  */
 struct user *addUser(char *username) {
-    struct user **tracker = &head, *newNode;
+    struct user **tracker = &userHead, *newNode;
     while (*tracker) // Traverse the list until end
         tracker = &(*tracker)->next;
     newNode = (struct user*)malloc(sizeof(struct user));
@@ -71,7 +71,7 @@ struct user *addUser(char *username) {
  * Produces: A struct
  */
 struct user *findUser(char *username) {
-    struct user **tracker = &head;
+    struct user **tracker = &userHead;
     while (*tracker) {
         if (strcmp(username, (*(tracker))->username) == 0)
             return *tracker;
@@ -89,7 +89,7 @@ struct user *findUser(char *username) {
  * Produces: A struct
  */
 struct user *removeUser(char *usernameToRemove) {
-    struct user **tracker = &head, *temp = head;
+    struct user **tracker = &userHead, *temp = userHead;
     while (temp) {
         if (strcmp(usernameToRemove, temp->username) == 0) {
             *tracker = temp->next;
@@ -119,9 +119,92 @@ void freeUsers(struct user *list) {
 }
 
 
+void printList() {
+    struct user *n = userHead;
+    while (n) {
+        printf("\nNAME: %s\n", n->username);
+        n = n->next;
+    }
+}
+
 // End User List functions
 //******************************************************************************************************************************
 // Mail List functions
+
+
+/**
+ * addMail, makes a new mail struct and mallocs space for it. Sets its path and threadID attributes.
+ *          This linked list will always just append new mails to the end of the list.
+ * 
+ * Consumes: A string, A pthread_t
+ * Produces: A struct
+ */
+struct mail *addMail(char *pathToFile, pthread_t threadID) {
+    struct mail **tracker = &mailHead, *newMail;
+    while(*tracker)
+        tracker = &(*tracker)->next;
+    newMail = (struct mail*)malloc(sizeof(struct mail));
+    newMail->pathToFile = pathToFile;
+    newMail->thread = threadID;
+    newMail->next = *tracker; // NULL
+    *tracker = newMail;
+    return *tracker;
+}
+
+
+/**
+ * printMail, prints the names and ids of all the mail in the list.
+ * 
+ * Consumes: Nothing
+ * Produces: Nothing
+ */
+void printMail() {
+    struct mail *list = mailHead;
+    while (list != NULL) {
+        printf("\nFileName: --> %s, ThreadID: --> %ld\n", list->pathToFile, list->thread);
+        list = list->next;
+    }
+}
+
+
+/**
+ * removeMail, removes the mail from the list based on the filename given.
+ * 
+ * Consumes: A string
+ * Produces: A struct
+ */
+struct mail *removeMail(char *fileName) {
+    struct mail **tracker = &mailHead, *temp = mailHead;
+    while(temp) {
+        if (strcmp(temp->pathToFile, fileName) == 0) {
+            *tracker = temp->next;
+            free(temp);
+            return *tracker;
+        }
+        tracker = &(*tracker)->next;
+        temp = temp->next;
+    }
+    return NULL;
+}
+
+
+/**
+ * freeMail, frees all the threads and or structs in the mailList.
+ * 
+ * Consumes: A struct
+ * Produces: Nothing
+ */
+void freeMail(struct mail *list) {
+    struct mail *temp;
+    while(list) {
+        temp = list;
+        list = list->next;
+        pthread_cancel(temp->thread);
+        pthread_join(temp->thread, NULL);
+        free(temp);
+    }
+}
+
 
 
 // End Mail List functions

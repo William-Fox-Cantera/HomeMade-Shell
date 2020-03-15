@@ -23,7 +23,7 @@ int sh(int argc, char **argv, char **envp);
 int shouldRunAsBackground(char **commandList);
 int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
-void *watchUserThread(void *arg);
+void *watchUserCallback(void *arg);
 int isBuiltIn(char *command); 
 int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
 void sigHandler(int signal);

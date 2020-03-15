@@ -114,6 +114,7 @@ void freeUsers(struct user *list) {
     while(list) {
         temp = list;
         list = list->next;
+        free(temp->username);
         free(temp);
     }
 }
@@ -199,6 +200,7 @@ void freeMail(struct mail *list) {
     while(list) {
         temp = list;
         list = list->next;
+        free(temp->pathToFile);
         pthread_cancel(temp->thread);
         pthread_join(temp->thread, NULL);
         free(temp);

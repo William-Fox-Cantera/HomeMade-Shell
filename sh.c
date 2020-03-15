@@ -46,7 +46,7 @@ int sh(int argc, char **argv, char **envp) {
 
         /* print your prompt */
         printShell();
-    
+            
         /* get command line and process */
         if (fgets(buffer, BUFFERSIZE, stdin) == NULL) { // Ignore ctrl+d a.k.a. EOF
             printf("^D\nUse \"exit\" to leave shell.\n");
@@ -58,10 +58,10 @@ int sh(int argc, char **argv, char **envp) {
     
         // Main Argumment Parser
         token = strtok (buffer, " ");                       // HOW GLOBBING IS IMPLEMENTED: I used strstr() to check to see if a * or ? character appear
-        for (int i = 0; token != NULL; i++) {               //                              in the buffer from fgets(). I then used glob(3) to expand the 
+        for (int i = 0; token != NULL; i++) {                                   //          in the buffer from fgets(). I then used glob(3) to expand the 
             if ((strstr(token, "*") != NULL) || (strstr(token, "?") != NULL)) { //          possible paths if there are any. If there are no paths, an error
-                csource = glob(token, 0, NULL, &paths);     //                              message is printed and the normal command is called without any	   
-                if (csource == 0) {                         //                              paths such as ls -l. If there were paths, the number of them is
+                csource = glob(token, 0, NULL, &paths);                         //          message is printed and the normal command is called without any	   
+                if (csource == 0) {                                             //          paths such as ls -l. If there were paths, the number of them is
                     for (char **p = paths.gl_pathv; *p != NULL; p++) {          //          saved in an int variable and the expanded list provided by glob
                         commandList[i] = (char *)malloc(strlen(*p)+1);          //          is passed off to execve() as an argv array. The glob list is freed
                         strcpy(commandList[i], *p);                             //          at the end of this while loop using the counter mentioned previously.
@@ -138,11 +138,10 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
                     freePath(pathList);
                     free(prefix);
                     free(cwd);
-                    for (struct user *temp = userHead; temp != NULL; temp = temp->next)
-                        free(temp->username); // For freeing the memory allocated by strdup in the watchUser function
                     freeUsers(userHead);
                     pthread_cancel(watchUserID);
                     pthread_join(watchUserID, NULL);
+                    freeMail(mailHead);
                     exit(0); // Exit without error
                 }
     } else {
@@ -269,41 +268,47 @@ char *getExternalPath(char **commandList, struct pathelement *pathList) {
 
 
 /**
- * watchMailThread, 
+ * watchMailCallback, this function is a callback which is called when pthread_create is used when using the watchmail
+ *                    built-in command. When a file specified by the user in the mailList linked list increases in size,
+ *                    a beep noise is played and a message is printed out to notify the user that there is new mail in 
+ *                    file that got larger. This is accomplished through an infinite loop that sleeps for 1 second each
+ *                    iteration and uses stat(2) to check for file size increases among the files in the mailList data
+ *                    structure (linked list).
  * 
- * Consumes:
- * Produces:
+ * Consumes: Args that are given by pthread_create
+ * Produces: Nothing
  */
-void *watchMailThread(void *callbackArgs) {
+void *watchMailCallback(void *callbackArgs) {
     char *fileName = (char *)callbackArgs;
     struct stat st;
-    stat(fileName, &st);
-    int prevFileSize = st.st_size;
+    if (stat(fileName, &st) != 0)
+        perror("stat problem"); // If stat system call failed
+    long prevFileSize = (long)st.st_size;
     struct timeval tv;
     time_t currentTime;
-    printf("MADEIT\n");
     while(1) {
         if (gettimeofday(&tv, NULL) != 0) // Timezone does not matter
             perror("Get current time problem"); // If getting thhe current time failed
         currentTime = tv.tv_sec; // Update the timeval struct
-        if (st.st_size > prevFileSize) { // Print a notification saying you've got mail if the file size increased
-            printf("\a\nBEEP! You've Got Mail in %s at %ld", fileName, currentTime);
-            prevFileSize = st.st_size; // Update previous time
+        if (stat(fileName, &st) != 0) // Keep updating the stat buffer
+            perror("stat problem"); // If stat system call failed
+        if ((long)st.st_size > prevFileSize) { // Print a notification saying you've got mail if the file size increased
+            printf("\a\nYou've Got Mail in %s at %s", fileName, ctime(&currentTime));
+            prevFileSize = (long)st.st_size; // Update previous time
         }
         sleep(1); // Wait for 1 second in between possible mail notifications
     }
 }
 
 
-
 /**
- * watchUserThread, loops infinitely on a sleep timer of 20 seconds. Finds the user on the machine and tracks their logins.
+ * watchUserCallback, loops infinitely on a sleep timer of 20 seconds. Finds the user on the machine and tracks their logins.
  *                  The data shared the global users linked list is protected by a mutex_lock and unlock.
  * 
  * Consumes: Nothing
  * Produces: Nothing
  */
-void *watchUserThread(void *arg) {
+void *watchUserCallback(void *arg) {
     struct utmpx *up;
     while(1) {
         setutxent(); // Start at beginning
@@ -311,7 +316,7 @@ void *watchUserThread(void *arg) {
             if (up->ut_type == USER_PROCESS) { // Only care about users
                 pthread_mutex_lock(&mutexLock);
                 struct user *someUser = findUser(up->ut_user);
-                if (someUser != NULL) { // If user exists
+                if (someUser) { // If user exists
                     if (someUser->isLoggedOn == 0) {
                         someUser->isLoggedOn = 1;
                         printf("%s has logged on %s from %s\n", up->ut_user, up->ut_line, up->ut_host);
@@ -424,9 +429,10 @@ void watchMail(char **commandList) {
             perror("stat");
             return;
         }
-        pthread_create(&mailID, NULL, watchMailThread, (void *)commandList[1]);
-        addMail(strdup(commandList[1]), mailID); // Must use strdup to copy the string in order for it to remain properly in memory.
-    }                                            // Of course, this means more frees to deal with later
+        char *fileName = strdup(commandList[1]);
+        pthread_create(&mailID, NULL, watchMailCallback, (void *)fileName);
+        addMail(fileName, mailID); // Must use strdup to copy the string in order for it to remain properly in memory.
+    }                              // Of course, this means more frees to deal with later
  }
 
 
@@ -455,7 +461,7 @@ void watchUser(char **commandList) {
         pthread_mutex_unlock(&mutexLock);
         if (!threadExists) {
             threadExists = 1;
-            if (pthread_create(&watchUserID, NULL, watchUserThread, NULL) != 0) {
+            if (pthread_create(&watchUserID, NULL, watchUserCallback, NULL) != 0) {
                 perror("pthread_create problem");
             }
         }
@@ -875,6 +881,7 @@ void freePath(struct pathelement *pathList) {
     }
     free(path); // From get_path.h
 } 
+
 
 /**
  * handleInvalidArguments, if no argument was given for the time limit of

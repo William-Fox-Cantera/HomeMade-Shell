@@ -59,3 +59,4 @@ struct mail {
 struct mail *addMail(char *pathToFile, pthread_t threadID);
 void printMail();
 struct mail *removeMail(char *fileName);
+void freeMail(struct mail *list);

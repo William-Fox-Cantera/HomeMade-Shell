@@ -101,15 +101,7 @@ int sh(int argc, char **argv, char **envp) {
             commandList[i] = NULL;
         }
     }
-    freePath(pathList);
-    free(prefix);
-    free(myCwd);
-    freeUsers(userHead);
-    pthread_cancel(watchUserID);
-    pthread_join(watchUserID, NULL);
-    freeAllMail(mailHead);
-    free(commandList);
-    exit(0); // Exit without error
+    freeAndExit(pathList, myCwd, commandList);
     return 0;
 } /* sh() */
 
@@ -178,23 +170,25 @@ int runCommand(char **commandList, struct pathelement *pathList, char **argv, ch
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int result, status = 0, redirectionType = getRedirectionType(commandList);
-    int shouldRunInBg = shouldRunAsBackground(commandList);
-    char *externalPath = getExternalPath(commandList, pathList);
+    int result, abortProcess = 0, status = 0, redirectionType = getRedirectionType(commandList);
+    int shouldRunInBg = shouldRunAsBackground(commandList); // If the command should run as a bacgground process
+    char *externalPath = getExternalPath(commandList, pathList); // Returns the path for the command, using which, or a path entered by user
     if (shouldRunInBg)
         commandList[shouldRunInBg] = '\0'; // Get rid of the &, no need for it plus it causes problems
     if (externalPath != NULL) {
         printf("Executing: %s\n", externalPath);
-        /* do fork(), execve() and waitpid() */
-        if ((pid = fork()) < 0) { // Child
+        // Child
+        if ((pid = fork()) < 0) { // do fork(), execve() and waitpid() 
             perror("fork error");
         } else if (pid == 0) {
             if (redirectionType) { // If redirection was detected, not 0
-                handleRedirection(redirectionType, getRedirectionDest(commandList)); // This is where the redirection magic happens
-                removeAfterRedirect(commandList); // Get rid of the redirection symbol and the arguments that come after it
-            }
+                abortProcess = handleRedirection(redirectionType, getRedirectionDest(commandList)); // This is where the redirection magic happens
+                removeAfterRedirect(commandList); // Get rid of the redirection symbol and the arguments that come after it                     
+        }
+            if (abortProcess) 
+                kill(pid, SIGTERM);
             execve(externalPath, commandList, envp);
-            perror("Problem executing: ");
+            perror("execve problem: "); // Code should never reach here...
         }
         // Parent
         if (shouldRunInBg) { // If it SHOULD be run as a background process
@@ -204,7 +198,7 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
         } else { // If it should NOT be run as a background process
             free(externalPath); // Free it
             signal(SIGALRM, alarmHandler); // Callback to update timeout global
-            //signal(SIGCHLD, childHandler); // Callback to update isChildDone global
+            signal(SIGCHLD, childHandler); // Callback to update isChildDone global
             alarm(atoi(argv[1])); // install an alarm to be fired after the given time (argv[1])
             pause(); // Stop everything until child dies
             if (timeout) {
@@ -439,6 +433,7 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
 // PIPES AND REDIRECTION
 
 
+// REDIRECTION
 /**
  * getRedirectionType, traverses the commandList array and searches for a redirection type. If found it will return one of ">",
  *                     ">&", ">", ">>&", ">". If none of these are found, NULL will be returned.
@@ -472,12 +467,20 @@ int getRedirectionType(char **commandList) {
 }
 
 
+/**
+ * getRedirectionDest, gets the string input by th user directly after the redirection symbol. This string is taken to be a filename
+ *                     in which the contents of a command will be redirected to. So ls > temp.txt would dump the contents of ls into
+ *                     temp.txt. This function gets that temp.txt filename.
+ * 
+ * Consumes: An array of strings
+ * Produces: A string
+ */
 char *getRedirectionDest(char **commandList) {
     char *redirectionDest;
     for (int i = 0; commandList[i] != NULL; i++)
         if (strstr(commandList[i], "<") || strstr(commandList[i], ">"))
             if (commandList[i+1] != NULL) {
-                redirectionDest = (char *)malloc(strlen(commandList[i+1]));
+                redirectionDest = (char *)malloc(strlen(commandList[i+1])+1);
                 strcpy(redirectionDest, commandList[i+1]);
                 return redirectionDest;
             }
@@ -485,6 +488,14 @@ char *getRedirectionDest(char **commandList) {
 }
 
 
+/**
+ * removeAfterRedirect, this function removes all garbage in the command list including and after the redirection symbol because execve
+ *                      only cares about what comes before the redirection symbol. All the extra stuff after will cause problems in 
+ *                      exec if not removed.
+ * 
+ * Consumes: An array of strings
+ * Produces: Nothing
+ */
 void removeAfterRedirect(char **commandList) {
     int commandCount = 0;
     while(1) {
@@ -501,36 +512,84 @@ void removeAfterRedirect(char **commandList) {
 
 /**
  * handleRedirection, please refer to the documentation above the getRedirectionType function to know more about what the redirection
- *                    parameter is.
+ *                    parameter is. This function also returns an integer, 0 if the redirection can go through, or 1 if noclobber is
+ *                    turned on and an issue overwriting could arise. 
  * 
  * Consumes: An integer
  * Produces: Nothing
  */
-void handleRedirection(int redirectionType, char *destFile) {
+int handleRedirection(int redirectionType, char *destFile) {
     int fileDescriptor;
-    int wrx = 0666;
-    if (!redirectionType) // If redirection type is 0, no redirection detected.
-        return;
-    if (redirectionType == 1) {        // For ">"
-        if (hasNoClobber) 
-            printf("noclobber is currently on, cannot overwrite, aborting...\n");
-        else {
+    int abort = 0; // For letting the run executable function know to stop the command from running if noclobber is on
+    int wrx = 0666; // Files in UNIX have read and write permissions for user, group, other by default
+    struct stat buffer;
+    int fileExists = (stat(destFile, &buffer) == 0) ? 1 : 0; // Check if the specified file already exists
+    if (redirectionType == 0) { // If no redirection was detected
+        abort = 0;
+    } else if (redirectionType == 1) { // For ">"
+        if (hasNoClobber && fileExists) {
+            printf("noclobber is on, cannot overwrite %s, aborting...\n", destFile);
+            abort = 1;
+        } else {
             fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_TRUNC, wrx); // Give all permissions except execute
             close(1); // Close standard out
             dup(fileDescriptor);
             close(fileDescriptor);
         }
     } else if (redirectionType == 2) { // For ">>"
-        printf("Found >>\n");
+        if (hasNoClobber && fileExists) {
+            printf("noclobber is on, cannot overwrite %s, aborting...\n", destFile);
+            abort = 1;
+        } else {
+            fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_APPEND, wrx);
+            close(1); // Close stdout
+            dup(fileDescriptor);
+            close(fileDescriptor);
+        }
     } else if (redirectionType == 3) { // For "<"
-        printf("Found <\n");
+        if (!fileExists) {
+            printf("%s: %s", destFile, strerror(ENOENT));
+            abort = 1;
+        } else {
+            fileDescriptor = open(destFile, O_RDONLY);
+            close(0); // Close standard in
+            dup(fileDescriptor);
+            close(fileDescriptor);
+        }
     } else if (redirectionType == 4) { // For ">>&"
-        printf("Found >>&\n");
+        if (hasNoClobber && fileExists) {
+            printf("noclobber is on, cannot overwrite %s, aborting...\n", destFile);
+            abort = 1;
+        } else {
+            fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_APPEND, wrx);
+            close(1); // Close stdout
+            dup(fileDescriptor);
+            close(2); // Close standard error
+            dup(fileDescriptor);
+            close(fileDescriptor);
+        }
     } else if (redirectionType == 5) { // For ">&"
-        printf("Found >&\n");
+        if (hasNoClobber && fileExists) {
+            printf("noclobber is on, cannot overwrite %s, aborting...\n", destFile);
+            abort = 1;
+        } else {
+            fileDescriptor = open(destFile, O_WRONLY|O_CREAT|O_TRUNC, wrx);
+            close(1); // Close stdout
+            dup(fileDescriptor);
+            close(2); // Close standard error
+            dup(fileDescriptor);
+            close(fileDescriptor);
+        }
     }
     free(destFile);
+    return abort;
 }
+
+// PIPES
+
+
+
+
 
 
 // END PIPES AND REDIRECTION
@@ -1087,6 +1146,26 @@ void handleInvalidArguments(char *arg) {
         }
     }
 }
+
+
+/**
+ * freeAndExit, this function gets called when exit is typed to exit. Frees all of the things that are still taking
+ *              up space and exits the program.
+ * 
+ * Consumes: A struct, A string, An array of strings
+ * Produces: Nothing
+ */ 
+void freeAndExit(struct pathelement *pathList, char *myCwd, char **commandList) {
+    freePath(pathList);
+    free(prefix);
+    free(myCwd);
+    freeUsers(userHead);
+    pthread_cancel(watchUserID);
+    pthread_join(watchUserID, NULL);
+    freeAllMail(mailHead);
+    free(commandList);
+    exit(0); // Exit without error
+} 
 
 
 // END CONVIENIENCE FUNCTIONS

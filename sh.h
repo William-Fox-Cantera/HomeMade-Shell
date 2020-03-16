@@ -47,7 +47,7 @@ char *getExternalPath(char **commandList, struct pathelement *pathList);
 int getRedirectionType(char **commandList);
 char *getRedirectionDest(char **commandList);
 void removeAfterRedirect(char **commandList);
-void handleRedirection(int redirectionType, char *destFile);
+int handleRedirection(int redirectionType, char *destFile);
 
 // BUILT IN COMMAND FUNCTIONS
 void noClobber();
@@ -75,3 +75,4 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
+void freeAndExit(struct pathelement *pathList, char *myCwd, char **commandList);

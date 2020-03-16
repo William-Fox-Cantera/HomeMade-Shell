@@ -19,18 +19,20 @@
 
 
 // CONSTANTS
+#define MAX_CMD 50
 #define PROMPTMAX 32
 #define MAXARGS 10
 #define BUFFERSIZE 512
 #define BUILT_IN_COMMAND_COUNT 14 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", 
                                   // "prompt", "printenv", "setenv", "watchuser", "watchmail", "noClobber"
 
-
 // MAIN SHELL FUNCTION
 int sh(int argc, char **argv, char **envp);
 
 
 // HELPER FUNCTIONS
+char **parseBuffer(char buffer[], char **commandList);
+int exectuteIt(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int shouldRunAsBackground(char **commandList);
 int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
@@ -43,11 +45,19 @@ void alarmHandler(int);
 char *getExternalPath(char **commandList, struct pathelement *pathList);
 
 
-// PIPES AND REDIRECTION
+// REDIRECTION
 int getRedirectionType(char **commandList);
-char *getRedirectionDest(char **commandList);
 void removeAfterRedirect(char **commandList);
+char *getRedirectionDest(char **commandList);
 int handleRedirection(int redirectionType, char *destFile);
+
+
+// PIPES
+int getPipeType(char **commandList);
+char **splitPipe(char **commandList, int beforeOrAfter);
+int handlePipes(char **commandList, char **envp, struct pathelement *pathList, char **argv);
+void freePipeArrays(char **beforePipe, char **afterPipe);
+
 
 // BUILT IN COMMAND FUNCTIONS
 void noClobber();

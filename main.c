@@ -6,26 +6,6 @@ int main( int argc, char **argv, char **envp ) {
   sigignore(SIGTSTP);
   sigignore(SIGTERM);
   signal(SIGINT, sigHandler);
-
-
-  /* // LINKED LIST TEST --> IT WORKS DELETE THIS LATER
-  addUser("will");
-  addUser("sam");
-  addUser("jimmy");
-  addUser("Holly"); 
-  removeUser("will");
-  struct user *n = head;
-
-  printList();
-
-  struct user *will = findUser("jimmy");
-  if (will != NULL)
-    printf("FOUND: %s\n", will->username);
-  else
-    printf("NO SUCH USER\n");
-  
-  freeUsers(head);
-  */
   return sh(argc, argv, envp);
 }
 

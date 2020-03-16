@@ -14,14 +14,27 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <fcntl.h>
 #include "lists.h"
+
+
+// CONSTANTS
+#define MAX_CMD 50
+#define PROMPTMAX 32
+#define MAXARGS 10
+#define BUFFERSIZE 512
+#define BUILT_IN_COMMAND_COUNT 14 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", 
+                                  // "prompt", "printenv", "setenv", "watchuser", "watchmail", "noClobber"
 
 // MAIN SHELL FUNCTION
 int sh(int argc, char **argv, char **envp);
 
+
 // HELPER FUNCTIONS
+char **parseBuffer(char buffer[], char **commandList);
+int exectuteIt(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int shouldRunAsBackground(char **commandList);
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp, char *cwd);
+int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 void *watchUserCallback(void *arg);
 int isBuiltIn(char *command); 
@@ -31,7 +44,23 @@ void childHandler(int signal);
 void alarmHandler(int);
 char *getExternalPath(char **commandList, struct pathelement *pathList);
 
+
+// REDIRECTION
+int getRedirectionType(char **commandList);
+void removeAfterRedirect(char **commandList);
+char *getRedirectionDest(char **commandList);
+int handleRedirection(int redirectionType, char *destFile);
+
+
+// PIPES
+int getPipeType(char **commandList);
+char **splitPipe(char **commandList, int beforeOrAfter);
+int handlePipes(char **commandList, char **envp, struct pathelement *pathList, char **argv);
+void freePipeArrays(char **beforePipe, char **afterPipe);
+
+
 // BUILT IN COMMAND FUNCTIONS
+void noClobber();
 void watchMail(char **commandList);
 void watchUser(char **commandList);
 char *which(char *command, struct pathelement *pathList);
@@ -47,6 +76,7 @@ void printEnvironment(char **commandList, char **envp);
 int setEnvironment(char **commandList, char **envp, struct pathelement *pathList);
 void killIt(char **commandList);
 
+
 // CONVIENIENCE FUNCTIONS
 void printShell();
 void listHandler(char **commandList);
@@ -55,9 +85,4 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
-
-// CONSTANTS
-#define PROMPTMAX 32
-#define MAXARGS 10
-#define BUFFERSIZE 512
-#define BUILT_IN_COMMAND_COUNT 13 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", "prompt", "printenv", "setenv", "watchuser", "watchmail"
+void freeAndExit(struct pathelement *pathList, char *myCwd, char **commandList);

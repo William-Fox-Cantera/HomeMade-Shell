@@ -29,9 +29,9 @@ int hasNoClobber = 0; // Either 0 or 1 for turning the "noclobber" option on or 
  * sh, this is the main faunction for the entire shell. Most of the code in this project is called from here.
  *     This function contains a while loops that runs until you exit the shell. First some important variables
  *     are assigned, then into the loop. Input is read using fgets and then the input is parsed. The parser ignores
- *     spaces and puts the input into an array called commandList which is passed the the argv array to many other
- *     functions. The parser also handles globbing if necessary, and all memory allocated for the globbing is freed
- *     at the end of the loop. 
+ *     spaces and puts the input into an array called commandList which is passed  to many other functions in this file.
+ *     The parser also handles globbing if necessary, and all memory allocated for the globbing as well as memory used by
+ *     the commandList itself is freed before the next iteration.
  * 
  * Consumes: Two arrays of strings, an integer
  * Produces: An integer

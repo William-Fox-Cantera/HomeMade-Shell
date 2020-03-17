@@ -1,12 +1,12 @@
 #include "sh.h"
 
 int main( int argc, char **argv, char **envp ) {
-  /* put signal set up stuff here */
   signal(SIGCHLD, childHandler);
-  sigignore(SIGTSTP);
-  sigignore(SIGTERM);
-  signal(SIGINT, sigHandler);
-  return sh(argc, argv, envp);
+  sigignore(SIGTSTP); // Ignore ctrl+z
+  sigignore(SIGTERM); // Ignore ctrl+z
+  signal(SIGINT, sigHandler); // Handle ctrl+c --> shell should ignore, running processes should be killed by it
+  sh(argc, argv, envp);
+  return 0;
 }
 
 /**

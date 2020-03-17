@@ -5,8 +5,9 @@
 // GLOBALS
 
 
-char *prefix; // String that precedes prompt when using the prompt function
+char *prefix = NULL; // String that precedes prompt when using the prompt function
 char previousWorkingDirectory[BUFFERSIZE]; // System for going back to previous directory with "cd -"
+char *myCwd = ""; // For keeping track of your current working directory
 int timeout = 0; // For ensuring processes are killed after the given time limit at argv[0]
 int isChildDone = 0; // For indicating whether or not a child process has finished
 int pid; // Variable for holding the pid of processes 
@@ -35,43 +36,25 @@ int hasNoClobber = 0; // Either 0 or 1 for turning the "noclobber" option on or 
  * Consumes: Two arrays of strings, an integer
  * Produces: An integer
  */
-int sh(int argc, char **argv, char **envp) {
-    handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered
-    int go = 1, shouldExit = 0; // integers
-    char buffer[BUFFERSIZE], **commandList, *myCwd = "", *cwd; // For printing to the terminal
-    struct pathelement *pathList = get_path(); // Put PATH into a linked list 
-    commandList = calloc(MAX_CMD, sizeof(char *));
-
-    while (go) { // Main Loop For Shell 
-        if (strcmp(myCwd, cwd = getcwd(NULL, 0)) != 0) { // Keep track of the previous and current working directories 
-            if (strcmp(myCwd, "")) {
-                strcpy(previousWorkingDirectory, myCwd);
-                free(myCwd);
-            }
-            myCwd = getcwd(NULL, 0);
-        }
-        free(cwd); // getcwd() system call will dynamically allocate memory
-
-        /* print your prompt */
-        printShell();
-
-        /* get command line and process */
-        if (fgets(buffer, BUFFERSIZE, stdin) == NULL) { // Ignore ctrl+d a.k.a. EOF
+void sh(int argc, char **argv, char **envp) {
+    handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered, else exit
+    char buffer[BUFFERSIZE], **commandList; // For printing to the terminal
+    struct pathelement *pathList = getPath(); // Put PATH into a linked list 
+    commandList = calloc(MAX_CMD, sizeof(char *)); // The key to this whole project, holds all user input
+    while (1) { // Main Loop For Shell, runs until the "exit" built-in is called, or kill is used
+        cwdManager(); // For managing current and previous directories
+        printShell(); // Prints the prompt each loop
+        if (fgets(buffer, BUFFERSIZE, stdin) == NULL) { // Ignore ctrl+d a.k.a. EOF, otherwise gets user input to process
             printf("^D\nUse \"exit\" to leave shell.\n");
-            continue;
+            continue; // Continue just ignores the rest of the loop and continues to the next iteration
         }
         buffer[strlen(buffer)-1] = '\0'; // Handle \n appended by fgets()
         if (strlen(buffer) < 1) // Ignore empty stdin, ie. user presses enter with no input
             continue; 
-  
         commandList = parseBuffer(buffer, commandList); // Parsing the command line arguments entered
-        shouldExit = exectuteIt(commandList, envp, pathList, argv);
-        if (shouldExit == 1) // Exit the main loop, free memory allocated
-            go = 0;
+        executeIt(commandList, envp, pathList, argv); // This function calls all the other functions in this file
     }
-    freeAndExit(pathList, myCwd, commandList); // Free everything currently taking up space
-    return 0;
-} /* sh() */
+} 
 
 
 // END MAIN LOOP FOR SHELL
@@ -80,6 +63,30 @@ int sh(int argc, char **argv, char **envp) {
 
 //*****************************************************************************************************************************
 // HELPER FUNCTIONS
+
+
+/**
+ * cwdManager, manages allocating and freeing the space taken by the getcwd(2) system call. MAnages two global variables: myCwd
+ *             and previousWorkingDirectory. This function makes sure the user can use the "cd -" command to go back to the
+ *             previous directory and makes sure there are no memory leaks in the process.
+ * 
+ * Consumes: Nothing
+ * Produces: Nothing
+ */
+void cwdManager() {
+    char *cwd, *cwd2;
+    if (strcmp(myCwd, cwd = getcwd(NULL, 0)) != 0) { // Keep track of the previous and current working directories 
+        if (strcmp(myCwd, "")) {
+            strcpy(previousWorkingDirectory, myCwd);
+            free(myCwd);
+        }
+        cwd2 = getcwd(NULL, 0);
+        myCwd = (char *)malloc((int)strlen(cwd2)+1);
+        strcpy(myCwd, cwd2);
+        free(cwd2);
+    }
+    free(cwd); // getcwd(2) system call will dynamically allocate memory, free it
+}
 
 
 /**
@@ -126,27 +133,19 @@ char **parseBuffer(char buffer[], char **commandList) {
  * executeIt, this is the function that is ultimately responsible for running every other function in this file at some point. 
  *            First if a pipe was entered as a command, the handlePipes function is called to use its special logic for
  *            properly running a piped command. Next, if no pipe was found, runCommand is called to run normal commands that
- *            don't use pipes. This will be either an external or built-in command. Last, this function returns an integer 
- *            for indicating if the user entered the exit command, if they did, this funtion returns 1 and the sh function 
- *            will free all alloced variables and exit the program.
+ *            don't use pipes. This will be either an external or built-in command.
  * 
  * Consumes: Three arrays of strings, a struct
- * Produces: An integer
+ * Produces: Nothing
  */
-int exectuteIt(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int builtInExitCode = 0;
+void executeIt(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
     if (!handlePipes(commandList, envp, pathList, argv))                // This runs logic for handling pipes if they exist in the commandList. If there are
-        builtInExitCode = runCommand(commandList, pathList, argv, envp);// no pipes, handlePipes will return 0 and thus the run command function will get 
+        runExecutable(commandList, envp, pathList, argv);// no pipes, handlePipes will return 0 and thus the run command function will get 
                                                                          // called instead for running a normal command without pipes.
-    if (builtInExitCode == 2) { // Update the path linked list if it was changed with setenv 
-        freePath(pathList);
-        pathList = get_path(); 
-    } 
     for (int i = 0; commandList[i] != NULL; i++) { 
         free(commandList[i]); // Freeing the command list 
         commandList[i] = NULL; // Reset it for the next loop
     }
-    return builtInExitCode;
 }
 
 
@@ -173,39 +172,25 @@ int shouldRunAsBackground(char **commandList) {
 
 
 /**
- * runCommand, if the command given is a built-in runs the built-in, else it tries to find the
- *             path for the external command called and runs that by calling the run external
- *             function which uses fork annd exec. This function returns an integer based on 
- *             the exit code if a built-in command was run. See the runBuiltIn function for its
- *             exit codes. 
- * 
- * Consumes: Three arrays of strings, a string, a struct
- * Produces: An integer
- */
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp) {
-    int builtInExitCode = 0;
-    if (isBuiltIn(commandList[0])) { // Check to see if the command refers to an already built in command
-                /* check for each built in command and implement */
-                printf(" Executing built-in: %s\n", commandList[0]);
-                builtInExitCode = runBuiltIn(commandList, pathList, envp);             
-    } else {
-        // When this function is done all of its local variables pop off the stack so no need to memset
-        runExecutable(commandList, envp, pathList, argv); 
-    }
-    return builtInExitCode; // Refer to the function definition above the runBuiltIn function for exit codes
-}
-
-
-/**
- * runExecutable, if the file contains an absolute path then check if it is executable
-*                 and start a new process with fork and run it with exec. If it is not a
-*                 direct path, then find where the command is using the which function and
-*                 use fork/exec on that. 
+ * runExecutable, First checks if the command to run is a built-in command. If it is, the built-in id run and this function returns
+ *                before any forking takes place. If it is not a built-in the getExternalPath function along with other functions for
+ *                checking fore redirection are called. THe path for the external command is returned, either sn absolute, ie. contains
+ *                a "./" or "../", or "/", or something of the like, or the which function returns the path to the command if it is not
+ *                an absolute or relative path. Then fork() is called and execve is called rirght after witht the appropriate commandList
+ *                for either a normal command or one involving redirection. The parent handles a couple of things. FIrst if a command takes
+ *                longer than the time interval specified in the command line argument, the process is aborted and the child is killed. If
+ *                the command finishes in time, no problem. There is also good use of waitpid here as well as a callback such that zombies
+ *                are avoided.
  * 
  * Consumes: Three lists of strings, a struct
  * Produces: Nothing
  */
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
+    if (isBuiltIn(commandList[0])) { // check for each built in command and implement 
+        printf("Executing built-in: %s\n", commandList[0]);
+        runBuiltIn(commandList, pathList, envp); 
+        return; // Definitely don't want to fork() if its a built-in command
+    } 
     int result, abortProcess = 0, status = 0, redirectionType = getRedirectionType(commandList);
     int shouldRunInBg = shouldRunAsBackground(commandList); // If the command should run as a bacgground process
     char *externalPath = getExternalPath(commandList, pathList); // Returns the path for the command, using which, or a path entered by user
@@ -412,20 +397,15 @@ int isBuiltIn(char *command) {
 
 
 /**
- * runBuiltIn, runs the built in commands, if a command like list is called with multiple
- *             arguments, its handler function is called, calling the command for each
- *             argument given.
+ * runBuiltIn, runs the built in commands, if a command like list is called with multiple arguments, its handler function is called, 
+ *             calling the command for each argument given. This function also handles exiting the program and freeing/getting the 
+ *             old and new linked lists for the PATH environment variable if need be.
  * 
- *             EXIT CODES FOR THIS FUNCTION:
- *                 - 1 --> Exit program
- *                 - 2 --> PATH environment variable was changed
- * 
- * Consumes: Two arrays of strings, a struct
+ * Consumes: Two arrays of strings, a string, a struct
  * Produces: Nothing
  */
-int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
-    int shouldExit = 0;
-    int pathChanged = 0;
+void runBuiltIn(char **commandList, struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
+    int shouldExit = 0, pathChanged = 0;
     if (strcmp(commandList[0], "exit") == 0) { // strcmp returns 0 if true
         shouldExit = exitProgram(); // Exit the program and thus the shell
     } else if (strcmp(commandList[0], "which") == 0) {
@@ -455,9 +435,12 @@ int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp) {
     } else if (strcmp(commandList[0], "noclobber") == 0) {
         noClobber();
     }
-    if (pathChanged)
-        return pathChanged;
-    return shouldExit ? 1 : 0;
+    if (pathChanged) {
+        freePath(pathList);
+        pathList = getPath();
+    }
+    if (shouldExit)
+        freeAndExit(pathList, commandList);
 }
 
 
@@ -702,7 +685,7 @@ char **splitPipe(char **commandList, int beforeOrAfter) { // 1 for before the pi
  * Produces: An integer
  */
 int handlePipes(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
-    int before = 1, after = 0, wasPiped = 0, pipeType = getPipeType(commandList), pipeFileDescriptor[2];
+    int fileDescriptor, before = 1, after = 0, wasPiped = 0, pipeType = getPipeType(commandList), pipeFileDescriptor[2];
     char **beforePipe = splitPipe(commandList, before), **afterPipe = splitPipe(commandList, after);
     if (pipeType) {
         if (pipe(pipeFileDescriptor) != 0) {
@@ -713,28 +696,33 @@ int handlePipes(char **commandList, char **envp, struct pathelement *pathList, c
         dup(pipeFileDescriptor[0]);
         close(pipeFileDescriptor[0]); // Send stdin to pipe
     //--------------------------------------
+        if (pipeType == 2) { // getPipeType returns 2 if the pipe is a "|&"
+            close(2);
+            dup(pipeFileDescriptor[1]); // Send standard error to pipe
+        }
+    //--------------------------------------
         close(1); // Close stdout
         dup(pipeFileDescriptor[1]);
         close(pipeFileDescriptor[1]); // Send stdout to pipe
     //--------------------------------------
-        runExecutable(beforePipe, envp, pathList, argv); // First call to exec, child runs command before pipe
+        runExecutable(beforePipe, envp, pathList, argv); // First call to exec, command output is sent to the pipe
     //--------------------------------------
-        int fid = open("/dev/tty", O_WRONLY); // Open stdout back to shell
+        fileDescriptor = open("/dev/tty", O_WRONLY); // Open stdout back to shell
         close(1);
-        dup(fid);
-        close(fid);
+        dup(fileDescriptor);
+        close(fileDescriptor);
     //--------------------------------------
-        fid = open("/dev/tty", O_WRONLY); // Open stderr back to shell
+        fileDescriptor = open("/dev/tty", O_WRONLY); // Open stderr back to shell
         close(2);
-        dup(fid);
-        close(fid);
+        dup(fileDescriptor);
+        close(fileDescriptor);
     //--------------------------------------
-        runExecutable(afterPipe, envp, pathList, argv); // Second call to exec, parent runs command after pipe
+        runExecutable(afterPipe, envp, pathList, argv); // Second call to exec, output of the second command is sent to stdout, stderr if applicable
     //--------------------------------------
-        fid = open("/dev/tty", O_RDONLY); // Open stdin back to shell
+        fileDescriptor = open("/dev/tty", O_RDONLY); // Open stdin back to shell
         close(0);
-        dup(fid);
-        close(fid);
+        dup(fileDescriptor);
+        close(fileDescriptor);
     //--------------------------------------
         wasPiped = 1;
     }
@@ -990,7 +978,7 @@ void printEnvironment(char **commandList, char **envp) {
  * Consumes: A list of strings
  * Produces: Nothing
  */
-void changeDirectory(char *commandList[]) {
+void changeDirectory(char **commandList) {
     if (commandList[1] == NULL) { // Case where no argument is given
         if (chdir(getenv("HOME")) != 0) { // Go to home
             errno = ENOENT;
@@ -1093,8 +1081,7 @@ char *which(char *command, struct pathelement *pathlist) {
     struct dirent *dirp;
     while (pathlist) { // Traverse path until NULL 
         if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
-            errno = ENOTDIR;
-            perror(" Error opening");
+            perror("opendir");
             exit(errno);
         } 
         while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
@@ -1134,9 +1121,8 @@ char *where(char *command, struct pathelement *pathlist) {
     struct dirent *dirp;
     while (pathlist) { // Traverse path until NULL 
         if ((dp = opendir(pathlist->element)) == NULL) {  // If element is not a directory
-            errno = ENOTDIR;
             perror(" Error opening");
-            exit(errno);
+            return NULL;
         } 
         while ((dirp = readdir(dp)) != NULL) { // traverse files in opened directories
             if (strcmp(dirp->d_name, command) == 0) { // If command is found do some string copying then return
@@ -1290,7 +1276,7 @@ void freePath(struct pathelement *pathList) {
         pathList = pathList->next;
         free(temp);
     }
-    free(path); // From get_path.h
+    free(path); // From getPath.h
 } 
 
 
@@ -1323,17 +1309,19 @@ void handleInvalidArguments(char *arg) {
  * freeAndExit, this function gets called when exit is typed to exit. Frees all of the things that are still taking
  *              up space and exits the program.
  * 
- * Consumes: A struct, A string, An array of strings
+ * Consumes: A struct, An array of strings
  * Produces: Nothing
  */ 
-void freeAndExit(struct pathelement *pathList, char *myCwd, char **commandList) {
+void freeAndExit(struct pathelement *pathList, char **commandList) {
+    if (prefix) // there may be no prefix, must check if it exists
+        free(prefix);
     freePath(pathList);
-    free(prefix);
     free(myCwd);
     freeUsers(userHead);
     pthread_cancel(watchUserID);
     pthread_join(watchUserID, NULL);
     freeAllMail(mailHead);
+    free(commandList[0]); // Freeing the command list elements, literally just frees the "exit" command typed
     free(commandList);
     exit(0); // Exit without error
 } 

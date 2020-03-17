@@ -1,6 +1,4 @@
-# choose your compiler
-#CC=gcc
-CC=gcc -Wall
+CC=gcc -w
 
 mysh: sh.o lists.o main.c 
 	$(CC) -g main.c sh.o lists.o -o mysh -lpthread

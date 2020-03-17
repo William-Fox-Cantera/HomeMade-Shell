@@ -19,26 +19,24 @@
 
 
 // CONSTANTS
-#define MAX_CMD 50
-#define PROMPTMAX 32
-#define MAXARGS 10
+#define MAX_CMD 128
 #define BUFFERSIZE 512
 #define BUILT_IN_COMMAND_COUNT 14 // "exit", "which", "where", "cd", "pwd", "list", "pid", "kill", 
                                   // "prompt", "printenv", "setenv", "watchuser", "watchmail", "noClobber"
 
 // MAIN SHELL FUNCTION
-int sh(int argc, char **argv, char **envp);
+void sh(int argc, char **argv, char **envp);
 
 
 // HELPER FUNCTIONS
+void cwdManager();
 char **parseBuffer(char buffer[], char **commandList);
-int exectuteIt(char **commandList, char **envp, struct pathelement *pathList, char **argv);
+void executeIt(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int shouldRunAsBackground(char **commandList);
-int runCommand(char **commandList, struct pathelement *pathList, char **argv, char **envp);
 void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 void *watchUserCallback(void *arg);
 int isBuiltIn(char *command); 
-int runBuiltIn(char *commandList[], struct pathelement *pathList, char **envp);
+void runBuiltIn(char **commandList, struct pathelement *pathList, char **envp);
 void sigHandler(int signal);
 void childHandler(int signal);
 void alarmHandler(int);
@@ -71,7 +69,7 @@ void printWorkingDirectory();
 void prompt(char *commandList[]);
 int exitProgram();
 void printPid();
-void changeDirectory(char *commandList[]);
+void changeDirectory(char **commandList);
 void printEnvironment(char **commandList, char **envp); 
 int setEnvironment(char **commandList, char **envp, struct pathelement *pathList);
 void killIt(char **commandList);
@@ -85,4 +83,4 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
-void freeAndExit(struct pathelement *pathList, char *myCwd, char **commandList);
+void freeAndExit(struct pathelement *pathList, char **commandList);

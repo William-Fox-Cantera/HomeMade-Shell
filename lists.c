@@ -3,7 +3,7 @@
 // getPath List functions
 //*****************************************************************************************************************************
 
-struct pathelement *get_path()
+struct pathelement *getPath()
 {
   /* path is a copy of the PATH and p is a temp pointer */
   char *p;
@@ -37,7 +37,7 @@ struct pathelement *get_path()
   } while ((p = strtok(NULL, ":")));
 
   return pathlist;
-} /* end get_path() */
+} /* end getPath() */
 
 
 

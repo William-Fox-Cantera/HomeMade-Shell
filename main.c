@@ -5,7 +5,8 @@ int main( int argc, char **argv, char **envp ) {
   sigignore(SIGTSTP); // Ignore ctrl+z
   sigignore(SIGTERM); // Ignore ctrl+z
   signal(SIGINT, sigHandler); // Handle ctrl+c --> shell should ignore, running processes should be killed by it
-  return sh(argc, argv, envp);
+  sh(argc, argv, envp);
+  return 0;
 }
 
 /**

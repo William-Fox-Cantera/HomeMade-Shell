@@ -1,0 +1,22 @@
+Script started on 2020-04-05 14:46:01-0400
+bensegal@cisc361:~/cisc361/pa3$ ./.[Kmysh 1
+[/usa/bensegal/cisc361/pa3]>cd
+Executing built-in: cd
+[/usa/bensegal]>setenv HOME /
+Executing built-in: setenv
+[/usa/bensegal]>cd
+Executing built-in: cd
+[/]>cd -
+Executing built-in: cd
+[/usa/bensegal]>setenv HOME /usa/bensegal
+Executing built-in: setenv
+[/usa/bensegal]>cd -
+Executing built-in: cd
+[/]>cd
+Executing built-in: cd
+[/usa/bensegal]>exit
+Executing built-in: exit
+bensegal@cisc361:~/cisc361/pa3$ exit
+exit
+
+Script done on 2020-04-05 14:47:03-0400

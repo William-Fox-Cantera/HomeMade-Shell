@@ -10,4 +10,4 @@ lists.o: lists.c lists.h
 	$(CC) -g -c lists.c
 
 clean:
-	rm -rf sh.o lists.o mysh
+	rm -rf sh.o getPath.o lists.o mysh

@@ -231,7 +231,8 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
                 }
             }
         }
-        printf("exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
+        if (WEXITSTATUS(status) != 0)
+            printf("exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
     } 
 }
 

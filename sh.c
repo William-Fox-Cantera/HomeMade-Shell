@@ -36,12 +36,13 @@ int hasNoClobber = 0; // Either 0 or 1 for turning the "noclobber" option on or 
  * Consumes: Two arrays of strings, an integer
  * Produces: An integer
  */
-void sh(int argc, char **argv, char **envp) {
+int sh(int argc, char **argv, char **envp) {
     handleInvalidArguments(argv[1]); // Make sure a valid number for the time limit was entered, else exit
     char buffer[BUFFERSIZE], **commandList; // For printing to the terminal
     struct pathelement *pathList = getPath(); // Put PATH into a linked list 
+    int go = 1; // For running loop
     commandList = calloc(MAX_CMD, sizeof(char *)); // The key to this whole project, holds all user input
-    while (1) { // Main Loop For Shell, runs until the "exit" built-in is called, or kill is used
+    while (go) { // Main Loop For Shell, runs until the "exit" built-in is called, or kill is used
         cwdManager(); // For managing current and previous directories
         printShell(); // Prints the prompt each loop
         if (fgets(buffer, BUFFERSIZE, stdin) == NULL) { // Ignore ctrl+d a.k.a. EOF, otherwise gets user input to process
@@ -52,8 +53,10 @@ void sh(int argc, char **argv, char **envp) {
         if (strlen(buffer) < 1) // Ignore empty stdin, ie. user presses enter with no input
             continue; 
         commandList = parseBuffer(buffer, commandList); // Parsing the command line arguments entered
-        executeIt(commandList, envp, pathList, argv); // This function calls all the other functions in this file
+        go = executeIt(commandList, envp, pathList, argv); // This function calls all the other functions in this file
     }
+    freeBeforeExit(pathList, commandList); // Free stuff still in use
+    return 0; // Return value for main
 } 
 
 
@@ -136,16 +139,17 @@ char **parseBuffer(char buffer[], char **commandList) {
  *            don't use pipes. This will be either an external or built-in command.
  * 
  * Consumes: Three arrays of strings, a struct
- * Produces: Nothing
+ * Produces: An integer
  */
-void executeIt(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
+int executeIt(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
     if (!handlePipes(commandList, envp, pathList, argv))                // This runs logic for handling pipes if they exist in the commandList. If there are
-        runExecutable(commandList, envp, pathList, argv);// no pipes, handlePipes will return 0 and thus the run command function will get 
-                                                                         // called instead for running a normal command without pipes.
+        return runExecutable(commandList, envp, pathList, argv);        // no pipes, handlePipes will return 0 and thus the run command function will get 
+                                                                        // called instead for running a normal command without pipes.
     for (int i = 0; commandList[i] != NULL; i++) { 
         free(commandList[i]); // Freeing the command list 
         commandList[i] = NULL; // Reset it for the next loop
     }
+    return 0;
 }
 
 
@@ -183,13 +187,12 @@ int shouldRunAsBackground(char **commandList) {
  *                are avoided.
  * 
  * Consumes: Three lists of strings, a struct
- * Produces: Nothing
+ * Produces: An integer
  */
-void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
+int runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv) {
     if (isBuiltIn(commandList[0])) { // check for each built in command and implement 
         printf("Executing built-in: %s\n", commandList[0]);
-        runBuiltIn(commandList, pathList, envp); 
-        return; // Definitely don't want to fork() if its a built-in command
+        return runBuiltIn(commandList, pathList, envp); // Definitely don't want to fork() if its a built-in command
     } 
     int result, abortProcess = 0, status = 0, redirectionType = getRedirectionType(commandList);
     int shouldRunInBg = shouldRunAsBackground(commandList); // If the command should run as a bacgground process
@@ -231,8 +234,10 @@ void runExecutable(char **commandList, char **envp, struct pathelement *pathList
                 }
             }
         }
-        printf("exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
+        if (WEXITSTATUS(status) != 0) // Print exit status of command if non-zero per instructions
+            printf("exit code of child: %d\n", WEXITSTATUS(status)); // Print actual exit status
     } 
+    return 1;
 }
 
 
@@ -404,7 +409,7 @@ int isBuiltIn(char *command) {
  * Consumes: Two arrays of strings, a string, a struct
  * Produces: Nothing
  */
-void runBuiltIn(char **commandList, struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
+int runBuiltIn(char **commandList, struct pathelement *pathList, char **envp) { // commandList[0] will always be the command itself
     int shouldExit = 0, pathChanged = 0;
     if (strcmp(commandList[0], "exit") == 0) { // strcmp returns 0 if true
         shouldExit = exitProgram(); // Exit the program and thus the shell
@@ -440,7 +445,9 @@ void runBuiltIn(char **commandList, struct pathelement *pathList, char **envp) {
         pathList = getPath();
     }
     if (shouldExit)
-        freeAndExit(pathList, commandList);
+        return 0; // Let's the sh function know to exit
+    else 
+        return 1;
 }
 
 
@@ -1306,13 +1313,13 @@ void handleInvalidArguments(char *arg) {
 
 
 /**
- * freeAndExit, this function gets called when exit is typed to exit. Frees all of the things that are still taking
+ * freeBeforeExit, this function gets called when exit is typed to exit. Frees all of the things that are still taking
  *              up space and exits the program.
  * 
  * Consumes: A struct, An array of strings
  * Produces: Nothing
  */ 
-void freeAndExit(struct pathelement *pathList, char **commandList) {
+void freeBeforeExit(struct pathelement *pathList, char **commandList) {
     if (prefix) // there may be no prefix, must check if it exists
         free(prefix);
     freePath(pathList);
@@ -1323,7 +1330,6 @@ void freeAndExit(struct pathelement *pathList, char **commandList) {
     freeAllMail(mailHead);
     free(commandList[0]); // Freeing the command list elements, literally just frees the "exit" command typed
     free(commandList);
-    exit(0); // Exit without error
 } 
 
 

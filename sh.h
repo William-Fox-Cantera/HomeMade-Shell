@@ -25,18 +25,18 @@
                                   // "prompt", "printenv", "setenv", "watchuser", "watchmail", "noClobber"
 
 // MAIN SHELL FUNCTION
-void sh(int argc, char **argv, char **envp);
+int sh(int argc, char **argv, char **envp);
 
 
 // HELPER FUNCTIONS
 void cwdManager();
 char **parseBuffer(char buffer[], char **commandList);
-void executeIt(char **commandList, char **envp, struct pathelement *pathList, char **argv);
+int executeIt(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 int shouldRunAsBackground(char **commandList);
-void runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
+int runExecutable(char **commandList, char **envp, struct pathelement *pathList, char **argv);
 void *watchUserCallback(void *arg);
 int isBuiltIn(char *command); 
-void runBuiltIn(char **commandList, struct pathelement *pathList, char **envp);
+int runBuiltIn(char **commandList, struct pathelement *pathList, char **envp);
 void sigHandler(int signal);
 void childHandler(int signal);
 void alarmHandler(int);
@@ -83,4 +83,4 @@ void whereHandler(char **commandList, struct pathelement *pathList);
 void freeAll(struct pathelement *pathList, char *cwd);
 void freePath(struct pathelement *pathList);
 void handleInvalidArguments(char *arg);
-void freeAndExit(struct pathelement *pathList, char **commandList);
+void freeBeforeExit(struct pathelement *pathList, char **commandList);
